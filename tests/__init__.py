@@ -1,0 +1,1 @@
+"""Test package for Code Index MCP."""

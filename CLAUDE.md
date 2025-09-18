@@ -147,4 +147,4 @@ When implementing new features:
 3. Follow the established pattern of validation → business logic → response formatting
 4. Test with MCP Inspector for immediate feedback
 5. Consider thread safety for any shared state
-- **主动使用CodeIndex工具**进行代码分析和搜索
+- **主动使用CodeIndex工具**进行代码分析、搜索和重构
