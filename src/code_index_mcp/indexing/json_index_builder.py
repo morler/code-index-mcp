@@ -120,15 +120,6 @@ class JSONIndexBuilder:
         logger.info(f"Building JSON index using Strategy pattern (parallel={parallel})...")
         start_time = time.time()
 
-        all_symbols = {}
-        all_files = {}
-        languages = set()
-        specialized_count = 0
-        fallback_count = 0
-
-        # Get specialized extensions for tracking
-        specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
-
         # Get list of files to process
         files_to_process = self._get_supported_files()
         total_files = len(files_to_process)
@@ -138,47 +129,73 @@ class JSONIndexBuilder:
             return self._create_empty_index()
 
         logger.info(f"Processing {total_files} files...")
+        
+        # Process files and collect results
+        all_symbols, all_files, languages, specialized_count, fallback_count = self._process_files(
+            files_to_process, parallel, max_workers
+        )
 
-        if parallel and total_files > 1:
-            # Use ThreadPoolExecutor for I/O-bound file reading
-            # ProcessPoolExecutor has issues with strategy sharing
-            if max_workers is None:
-                max_workers = min(os.cpu_count() or 4, total_files)
+        # Build and return final index
+        return self._build_final_index(all_symbols, all_files, languages, 
+                                     specialized_count, fallback_count, start_time)
 
-            logger.info(f"Using parallel processing with {max_workers} workers")
+    def _process_files(self, files_to_process: List[str], parallel: bool, 
+                    max_workers: Optional[int]) -> tuple[Dict[str, Any], Dict[str, Any], 
+                    set[str], int, int]:
+        """Process files either in parallel or sequentially.
+        
+        Returns:
+            Tuple of (all_symbols, all_files, languages, specialized_count, fallback_count)
+        """
+        all_symbols = {}
+        all_files = {}
+        languages = set()
+        specialized_count = 0
+        fallback_count = 0
+        
+        # Get specialized extensions for tracking
+        specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
 
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all tasks
-                future_to_file = {
-                    executor.submit(self._process_file, file_path, specialized_extensions): file_path
-                    for file_path in files_to_process
-                }
-
-                # Process completed tasks
-                processed = 0
-                for future in as_completed(future_to_file):
-                    file_path = future_to_file[future]
-                    result = future.result()
-
-                    if result:
-                        symbols, file_info_dict, language, is_specialized = result
-                        all_symbols.update(symbols)
-                        all_files.update(file_info_dict)
-                        languages.add(language)
-
-                        if is_specialized:
-                            specialized_count += 1
-                        else:
-                            fallback_count += 1
-
-                    processed += 1
-                    if processed % 100 == 0:
-                        logger.debug(f"Processed {processed}/{total_files} files")
+        if parallel and len(files_to_process) > 1:
+            specialized_count, fallback_count = self._process_files_parallel(
+                files_to_process, specialized_extensions, max_workers,
+                all_symbols, all_files, languages
+            )
         else:
-            # Sequential processing
-            logger.info("Using sequential processing")
-            for file_path in files_to_process:
-                result = self._process_file(file_path, specialized_extensions)
+            specialized_count, fallback_count = self._process_files_sequential(
+                files_to_process, specialized_extensions,
+                all_symbols, all_files, languages
+            )
+
+        return all_symbols, all_files, languages, specialized_count, fallback_count
+
+    def _process_files_parallel(self, files_to_process: List[str], specialized_extensions: set[str],
+                               max_workers: Optional[int], all_symbols: Dict[str, Any],
+                               all_files: Dict[str, Any], languages: set[str]) -> tuple[int, int]:
+        """Process files in parallel using ThreadPoolExecutor."""
+        # Use ThreadPoolExecutor for I/O-bound file reading
+        # ProcessPoolExecutor has issues with strategy sharing
+        if max_workers is None:
+            max_workers = min(os.cpu_count() or 4, len(files_to_process))
+
+        logger.info(f"Using parallel processing with {max_workers} workers")
+
+        specialized_count = 0
+        fallback_count = 0
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(self._process_file, file_path, specialized_extensions): file_path
+                for file_path in files_to_process
+            }
+
+            # Process completed tasks
+            processed = 0
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                result = future.result()
+
                 if result:
                     symbols, file_info_dict, language, is_specialized = result
                     all_symbols.update(symbols)
@@ -190,6 +207,40 @@ class JSONIndexBuilder:
                     else:
                         fallback_count += 1
 
+                processed += 1
+                if processed % 100 == 0:
+                    logger.debug(f"Processed {processed}/{len(files_to_process)} files")
+
+        return specialized_count, fallback_count
+
+    def _process_files_sequential(self, files_to_process: List[str], specialized_extensions: set[str],
+                                  all_symbols: Dict[str, Any], all_files: Dict[str, Any],
+                                  languages: set[str]) -> tuple[int, int]:
+        """Process files sequentially."""
+        logger.info("Using sequential processing")
+        
+        specialized_count = 0
+        fallback_count = 0
+
+        for file_path in files_to_process:
+            result = self._process_file(file_path, specialized_extensions)
+            if result:
+                symbols, file_info_dict, language, is_specialized = result
+                all_symbols.update(symbols)
+                all_files.update(file_info_dict)
+                languages.add(language)
+
+                if is_specialized:
+                    specialized_count += 1
+                else:
+                    fallback_count += 1
+
+        return specialized_count, fallback_count
+
+    def _build_final_index(self, all_symbols: Dict[str, Any], all_files: Dict[str, Any],
+                          languages: set[str], specialized_count: int, fallback_count: int,
+                          start_time: float) -> Dict[str, Any]:
+        """Build the final index structure with metadata."""
         # Build index metadata
         metadata = IndexMetadata(
             project_path=self.project_path,
