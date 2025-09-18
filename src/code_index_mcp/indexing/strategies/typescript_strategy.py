@@ -3,7 +3,7 @@ TypeScript parsing strategy using tree-sitter - Optimized single-pass version.
 """
 
 import logging
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, NamedTuple, Callable
 from .base_strategy import ParsingStrategy
 from ..models import SymbolInfo, FileInfo
 
@@ -13,11 +13,24 @@ import tree_sitter
 from tree_sitter_typescript import language_typescript
 
 
+class NodeHandler(NamedTuple):
+    symbol_type: str
+    identifier_type: str
+    target_list: str  # 'functions' or 'classes'
+    requires_context: bool = False
+
+
 class TypeScriptParsingStrategy(ParsingStrategy):
     """TypeScript-specific parsing strategy using tree-sitter - Single Pass Optimized."""
 
     def __init__(self):
         self.ts_language = tree_sitter.Language(language_typescript())
+        self._node_handlers = {
+            'function_declaration': NodeHandler('function', 'identifier', 'functions'),
+            'class_declaration': NodeHandler('class', 'type_identifier', 'classes'),
+            'interface_declaration': NodeHandler('interface', 'type_identifier', 'classes'),
+            'method_definition': NodeHandler('method', 'property_identifier', 'functions', requires_context=True),
+        }
 
     def get_language_name(self) -> str:
         return "typescript"
@@ -56,7 +69,7 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         file_info = FileInfo(
             language=self.get_language_name(),
             line_count=len(content.splitlines()),
-            symbols={"functions": list(symbols.keys()), "classes": []},
+            symbols={"functions": functions, "classes": classes},
             imports=imports,
             exports=exports
         )
@@ -68,15 +81,8 @@ class TypeScriptParsingStrategy(ParsingStrategy):
                                   current_class: Optional[str] = None):
         """Single-pass traversal that extracts symbols and analyzes calls."""
 
-        # Handle different node types
-        if node.type == 'function_declaration':
-            self._handle_function_declaration(node, context, current_function, current_class)
-        elif node.type == 'class_declaration':
-            self._handle_class_declaration(node, context, current_function, current_class)
-        elif node.type == 'interface_declaration':
-            self._handle_interface_declaration(node, context, current_function, current_class)
-        elif node.type == 'method_definition':
-            self._handle_method_definition(node, context, current_function, current_class)
+        if node.type in self._node_handlers:
+            self._handle_symbol_declaration(node, context, current_function, current_class)
         elif node.type == 'call_expression' and current_function:
             self._handle_call_expression(node, context, current_function)
         elif node.type == 'import_statement':
@@ -84,98 +90,52 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         elif node.type in ['export_statement', 'export_default_declaration']:
             self._handle_export_statement(node, context)
         else:
-            # Continue traversing children for other node types
             for child in node.children:
                 self._traverse_node_single_pass(child, context, current_function=current_function,
                                                current_class=current_class)
 
-    def _handle_function_declaration(self, node, context: 'TraversalContext',
-                                      current_function: Optional[str], current_class: Optional[str]) -> None:
-        """Handle function declaration nodes."""
-        name = self._get_function_name(node, context.content)
-        if name:
-            symbol_id = self._create_symbol_id(context.file_path, name)
-            signature = self._get_ts_function_signature(node, context.content)
-            symbol_info = SymbolInfo(
-                type="function",
-                file=context.file_path,
-                line=node.start_point[0] + 1,
-                signature=signature
-            )
-            context.symbols[symbol_id] = symbol_info
-            context.symbol_lookup[name] = symbol_id
-            context.functions.append(name)
+    def _handle_symbol_declaration(self, node, context: 'TraversalContext',
+                                  current_function: Optional[str], current_class: Optional[str]) -> None:
+        """Unified handler for all symbol declarations."""
+        handler = self._node_handlers[node.type]
+        name = self._extract_name(node, context.content, handler.identifier_type)
 
-            # Traverse function body with updated context
-            func_context = f"{context.file_path}::{name}"
-            for child in node.children:
-                self._traverse_node_single_pass(child, context, current_function=func_context,
-                                               current_class=current_class)
+        if not name:
+            return
 
-    def _handle_class_declaration(self, node, context: 'TraversalContext',
-                                 current_function: Optional[str], current_class: Optional[str]) -> None:
-        """Handle class declaration nodes."""
-        name = self._get_class_name(node, context.content)
-        if name:
+        if handler.requires_context and not current_class:
+            return
+
+        if handler.requires_context:
+            full_name = f"{current_class}.{name}"
+            symbol_id = self._create_symbol_id(context.file_path, full_name)
+        else:
+            full_name = name
             symbol_id = self._create_symbol_id(context.file_path, name)
-            symbol_info = SymbolInfo(
-                type="class",
-                file=context.file_path,
-                line=node.start_point[0] + 1
-            )
-            context.symbols[symbol_id] = symbol_info
+
+        symbol_info = SymbolInfo(
+            type=handler.symbol_type,
+            file=context.file_path,
+            line=node.start_point[0] + 1,
+            signature=self._get_ts_function_signature(node, context.content) if handler.symbol_type in ['function', 'method'] else None
+        )
+
+        context.symbols[symbol_id] = symbol_info
+        context.symbol_lookup[full_name] = symbol_id
+
+        if handler.requires_context:
             context.symbol_lookup[name] = symbol_id
+
+        if handler.target_list == 'functions':
+            context.functions.append(full_name)
+        elif handler.target_list == 'classes':
             context.classes.append(name)
 
-            # Traverse class body with updated context
-            for child in node.children:
-                self._traverse_node_single_pass(child, context, current_function=current_function,
-                                               current_class=name)
+        new_function = f"{context.file_path}::{full_name}" if handler.symbol_type in ['function', 'method'] else current_function
+        new_class = name if handler.symbol_type in ['class', 'interface'] else current_class
 
-    def _handle_interface_declaration(self, node, context: 'TraversalContext',
-                                     current_function: Optional[str], current_class: Optional[str]) -> None:
-        """Handle interface declaration nodes."""
-        name = self._get_interface_name(node, context.content)
-        if name:
-            symbol_id = self._create_symbol_id(context.file_path, name)
-            symbol_info = SymbolInfo(
-                type="interface",
-                file=context.file_path,
-                line=node.start_point[0] + 1
-            )
-            context.symbols[symbol_id] = symbol_info
-            context.symbol_lookup[name] = symbol_id
-            context.classes.append(name)  # Group interfaces with classes
-
-            # Traverse interface body with updated context
-            for child in node.children:
-                self._traverse_node_single_pass(child, context, current_function=current_function,
-                                               current_class=name)
-
-    def _handle_method_definition(self, node, context: 'TraversalContext',
-                                 current_function: Optional[str], current_class: Optional[str]) -> None:
-        """Handle method definition nodes."""
-        method_name = self._get_method_name(node, context.content)
-        if method_name and current_class:
-            full_name = f"{current_class}.{method_name}"
-            symbol_id = self._create_symbol_id(context.file_path, full_name)
-            signature = self._get_ts_function_signature(node, context.content)
-            symbol_info = SymbolInfo(
-                type="method",
-                file=context.file_path,
-                line=node.start_point[0] + 1,
-                signature=signature
-            )
-            context.symbols[symbol_id] = symbol_info
-            context.symbol_lookup[full_name] = symbol_id
-            context.symbol_lookup[method_name] = symbol_id  # Also index by method name alone
-            context.functions.append(full_name)
-
-            # Traverse method body with updated context
-            method_context = f"{context.file_path}::{full_name}"
-            for child in node.children:
-                self._traverse_node_single_pass(child, context, current_function=method_context,
-                                               current_class=current_class)
+        for child in node.children:
+            self._traverse_node_single_pass(child, context, current_function=new_function, current_class=new_class)
 
     def _handle_call_expression(self, node, context: 'TraversalContext',
                                current_function: str) -> None:
@@ -229,31 +189,10 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         export_text = context.content[node.start_byte:node.end_byte]
         context.exports.append(export_text)
 
-    def _get_function_name(self, node, content: str) -> Optional[str]:
-        """Extract function name from tree-sitter node."""
+    def _extract_name(self, node, content: str, identifier_type: str) -> Optional[str]:
+        """Extract name from tree-sitter node based on identifier type."""
         for child in node.children:
-            if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
-        return None
-
-    def _get_class_name(self, node, content: str) -> Optional[str]:
-        """Extract class name from tree-sitter node."""
-        for child in node.children:
-            if child.type == 'identifier':
-                return content[child.start_byte:child.end_byte]
-        return None
-
-    def _get_interface_name(self, node, content: str) -> Optional[str]:
-        """Extract interface name from tree-sitter node."""
-        for child in node.children:
-            if child.type == 'type_identifier':
-                return content[child.start_byte:child.end_byte]
-        return None
-
-    def _get_method_name(self, node, content: str) -> Optional[str]:
-        """Extract method name from tree-sitter node."""
-        for child in node.children:
-            if child.type == 'property_identifier':
+            if child.type == identifier_type:
                 return content[child.start_byte:child.end_byte]
         return None
 
