@@ -3,7 +3,10 @@ Search Strategy for ugrep
 """
 import shutil
 import subprocess
+import logging
 from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
 
@@ -44,7 +47,7 @@ class UgrepStrategy(SearchStrategy):
             max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         if not self.is_available():
-            return {"error": "ugrep (ug) command not found."}
+            return {}
 
         cmd = ['ug', '-r', '--line-number', '--no-heading']
 
@@ -89,11 +92,14 @@ class UgrepStrategy(SearchStrategy):
             # It exits with 2 for actual errors.
             if process.returncode > 1:
                 error_output = process.stderr.strip()
-                return {"error": f"ugrep execution failed with code {process.returncode}", "details": error_output}
+                logger.error(f"ugrep execution failed with code {process.returncode}: {error_output}")
+                return {}
 
             return parse_search_output(process.stdout, base_path, max_line_length)
 
         except FileNotFoundError:
-            return {"error": "ugrep (ug) command not found. Please ensure it's installed and in your PATH."}
+            logger.error("ugrep (ug) command not found. Please ensure it's installed and in your PATH.")
+            return {}
         except (OSError, ValueError, RuntimeError) as e:
-            return {"error": f"An unexpected error occurred during search: {str(e)}"}
+            logger.error(f"An unexpected error occurred during search: {e}")
+            return {}
