@@ -22,10 +22,10 @@ class PythonParsingStrategy(ParsingStrategy):
 
     def parse_file(self, file_path: str, content: str) -> Tuple[Dict[str, SymbolInfo], FileInfo]:
         """Parse Python file using AST with single-pass optimization."""
-        symbols = {}
-        functions = []
-        classes = []
-        imports = []
+        symbols: Dict[str, SymbolInfo] = {}
+        functions: List[SymbolInfo] = []
+        classes: List[SymbolInfo] = []
+        imports: List[str] = []
 
         try:
             tree = ast.parse(content)
@@ -59,11 +59,11 @@ class SinglePassVisitor(ast.NodeVisitor):
         self.file_path = file_path
 
         # Context tracking for call analysis
-        self.current_function_stack = []
-        self.current_class = None
+        self.current_function_stack: List[str] = []
+        self.current_class: Optional[str] = None
 
         # Symbol lookup index for O(1) access
-        self.symbol_lookup = {}  # name -> symbol_id mapping for fast lookups
+        self.symbol_lookup: Dict[str, str] = {}  # name -> symbol_id mapping for fast lookups
 
         # Track processed nodes to avoid duplicates
         self.processed_nodes: Set[int] = set()
@@ -221,6 +221,8 @@ class SinglePassVisitor(ast.NodeVisitor):
                     symbol_id = self.symbol_lookup[called_function]
                     symbol_info = self.symbols[symbol_id]
                     if symbol_info.type in ["function", "method"]:
+                        if symbol_info.called_by is None:
+                            symbol_info.called_by = []
                         if caller_function not in symbol_info.called_by:
                             symbol_info.called_by.append(caller_function)
                 else:
@@ -229,6 +231,8 @@ class SinglePassVisitor(ast.NodeVisitor):
                         if name.endswith(f".{called_function}"):
                             symbol_info = self.symbols[symbol_id]
                             if symbol_info.type in ["function", "method"]:
+                                if symbol_info.called_by is None:
+                                    symbol_info.called_by = []
                                 if caller_function not in symbol_info.called_by:
                                     symbol_info.called_by.append(caller_function)
                                 break

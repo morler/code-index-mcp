@@ -188,7 +188,7 @@ class StrategyFactory:
 
     def get_strategy_info(self) -> Dict[str, List[str]]:
         """Get information about available strategies."""
-        info = {}
+        info: Dict[str, List[str]] = {}
 
         # Group extensions by strategy type
         for ext, strategy in self._strategies.items():

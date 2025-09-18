@@ -70,7 +70,7 @@ class ResponseFormatter:
         Returns:
             Dictionary with 'functions' and 'classes' sets of duplicate names
         """
-        duplicates = {'functions': set(), 'classes': set()}
+        duplicates: Dict[str, Set[str]] = {'functions': set(), 'classes': set()}
 
         if not index_cache:
             return duplicates

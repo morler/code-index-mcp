@@ -32,10 +32,10 @@ class ZigParsingStrategy(ParsingStrategy):
 
     def _tree_sitter_parse(self, file_path: str, content: str) -> Tuple[Dict[str, SymbolInfo], FileInfo]:
         """Parse Zig file using tree-sitter."""
-        symbols = {}
-        functions = []
-        classes = []
-        imports = []
+        symbols: Dict[str, SymbolInfo] = {}
+        functions: List[SymbolInfo] = []
+        classes: List[SymbolInfo] = []
+        imports: List[str] = []
 
         parser = tree_sitter.Parser(self.zig_language)
         tree = parser.parse(content.encode('utf8'))

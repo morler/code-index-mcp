@@ -27,14 +27,14 @@ class JavaParsingStrategy(ParsingStrategy):
 
     def parse_file(self, file_path: str, content: str) -> Tuple[Dict[str, SymbolInfo], FileInfo]:
         """Parse Java file using tree-sitter with single-pass optimization."""
-        symbols = {}
-        functions = []
-        classes = []
-        imports = []
+        symbols: Dict[str, SymbolInfo] = {}
+        functions: List[SymbolInfo] = []
+        classes: List[SymbolInfo] = []
+        imports: List[str] = []
         package = None
 
         # Symbol lookup index for O(1) access
-        symbol_lookup = {}  # name -> symbol_id mapping
+        symbol_lookup: Dict[str, str] = {}  # name -> symbol_id mapping
 
         parser = tree_sitter.Parser(self.java_language)
 

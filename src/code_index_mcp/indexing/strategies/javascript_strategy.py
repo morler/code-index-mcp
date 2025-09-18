@@ -26,11 +26,11 @@ class JavaScriptParsingStrategy(ParsingStrategy):
 
     def parse_file(self, file_path: str, content: str) -> Tuple[Dict[str, SymbolInfo], FileInfo]:
         """Parse JavaScript file using tree-sitter."""
-        symbols = {}
-        functions = []
-        classes = []
-        imports = []
-        exports = []
+        symbols: Dict[str, SymbolInfo] = {}
+        functions: List[SymbolInfo] = []
+        classes: List[SymbolInfo] = []
+        imports: List[str] = []
+        exports: List[str] = []
 
         parser = tree_sitter.Parser(self.js_language)
         tree = parser.parse(content.encode('utf8'))

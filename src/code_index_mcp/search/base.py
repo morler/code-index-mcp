@@ -30,7 +30,7 @@ def parse_search_output(
     Returns:
         A dictionary where keys are file paths and values are lists of (line_number, line_content) tuples.
     """
-    results = {}
+    results: Dict[str, List[Tuple[int, str]]] = {}
     # Normalize base_path to ensure consistent path separation
     normalized_base_path = os.path.normpath(base_path)
 

@@ -123,6 +123,8 @@ class ObjectiveCParsingStrategy(ParsingStrategy):
                     # Find the called function in symbols and add relationship
                     for symbol_id, symbol_info in symbols.items():
                         if called_func in symbol_id.split("::")[-1]:
+                            if symbol_info.called_by is None:
+                                symbol_info.called_by = []
                             if current_function not in symbol_info.called_by:
                                 symbol_info.called_by.append(current_function)
 
