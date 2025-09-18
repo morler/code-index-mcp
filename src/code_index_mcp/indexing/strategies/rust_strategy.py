@@ -27,6 +27,173 @@ class RustParsingStrategy(ParsingStrategy):
 
         lines = content.splitlines()
 
+        # Parse each line for Rust constructs
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith('//') or line.startswith('/*'):
+                continue
+
+            self._parse_rust_line(line, i, file_path, symbols, functions, classes, imports, package)
+
+        # Phase 2: Add call relationship analysis
+        self._analyze_rust_calls(content, symbols, file_path)
+
+        file_info = FileInfo(
+            language=self.get_language_name(),
+            line_count=len(lines),
+            symbols={"functions": functions, "classes": classes},
+            imports=imports,
+            package=package
+        )
+
+        return symbols, file_info
+
+    def _parse_rust_line(self, line: str, line_index: int, file_path: str,
+                        symbols: Dict[str, SymbolInfo], functions: List[str],
+                        classes: List[str], imports: List[str], package: Optional[str]) -> None:
+        """Parse a single line of Rust code and extract symbols."""
+        # Crate/module name
+        if line.startswith('mod '):
+            self._parse_module_declaration(line, package)
+        # Use statements (imports)
+        elif line.startswith('use '):
+            self._parse_use_statement(line, imports)
+        # Function declarations
+        elif re.match(r'fn\s+\w+', line):
+            self._parse_function_declaration(line, line_index, file_path, symbols, functions)
+        # Struct declarations
+        elif re.match(r'struct\s+\w+', line):
+            self._parse_struct_declaration(line, line_index, file_path, symbols, classes)
+        # Enum declarations
+        elif re.match(r'enum\s+\w+', line):
+            self._parse_enum_declaration(line, line_index, file_path, symbols, classes)
+        # Trait declarations
+        elif re.match(r'trait\s+\w+', line):
+            self._parse_trait_declaration(line, line_index, file_path, symbols, classes)
+        # Impl blocks
+        elif re.match(r'impl\s+\w+', line):
+            self._parse_impl_block_start(line, line_index, file_path, symbols, functions)
+        # Const declarations
+        elif re.match(r'const\s+\w+', line):
+            self._parse_const_declaration(line, line_index, file_path, symbols)
+        # Static declarations
+        elif re.match(r'static\s+\w+', line):
+            self._parse_static_declaration(line, line_index, file_path, symbols)
+
+    def _parse_module_declaration(self, line: str, package: Optional[str]) -> None:
+        """Parse module declaration and update package name."""
+        mod_match = re.search(r'mod\s+(\w+)', line)
+        if mod_match:
+            package = mod_match.group(1)  # Note: This won't update the outer variable
+
+    def _parse_use_statement(self, line: str, imports: List[str]) -> None:
+        """Parse use statement and add to imports."""
+        use_match = re.search(r'use\s+([^;]+)', line)
+        if use_match:
+            imports.append(use_match.group(1).strip())
+
+    def _parse_function_declaration(self, line: str, line_index: int, file_path: str,
+                                   symbols: Dict[str, SymbolInfo], functions: List[str]) -> None:
+        """Parse function declaration and create symbol."""
+        func_match = re.match(r'fn\s+(\w+)\s*\(', line)
+        if func_match:
+            func_name = func_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, func_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="function",
+                file=file_path,
+                line=line_index + 1,
+                signature=line
+            )
+            functions.append(func_name)
+
+    def _parse_struct_declaration(self, line: str, line_index: int, file_path: str,
+                                 symbols: Dict[str, SymbolInfo], classes: List[str]) -> None:
+        """Parse struct declaration and create symbol."""
+        struct_match = re.match(r'struct\s+(\w+)', line)
+        if struct_match:
+            struct_name = struct_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, struct_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="struct",
+                file=file_path,
+                line=line_index + 1
+            )
+            classes.append(struct_name)
+
+    def _parse_enum_declaration(self, line: str, line_index: int, file_path: str,
+                               symbols: Dict[str, SymbolInfo], classes: List[str]) -> None:
+        """Parse enum declaration and create symbol."""
+        enum_match = re.match(r'enum\s+(\w+)', line)
+        if enum_match:
+            enum_name = enum_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, enum_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="enum",
+                file=file_path,
+                line=line_index + 1
+            )
+            classes.append(enum_name)
+
+    def _parse_trait_declaration(self, line: str, line_index: int, file_path: str,
+                                symbols: Dict[str, SymbolInfo], classes: List[str]) -> None:
+        """Parse trait declaration and create symbol."""
+        trait_match = re.match(r'trait\s+(\w+)', line)
+        if trait_match:
+            trait_name = trait_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, trait_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="trait",
+                file=file_path,
+                line=line_index + 1
+            )
+            classes.append(trait_name)
+
+    def _parse_impl_block_start(self, line: str, line_index: int, file_path: str,
+                                symbols: Dict[str, SymbolInfo], functions: List[str]) -> None:
+        """Parse impl block start and delegate to impl block parsing."""
+        impl_match = re.match(r'impl\s+(\w+)', line)
+        if impl_match:
+            impl_type = impl_match.group(1)
+            # Note: This needs access to all lines, will need to be handled differently
+            pass
+
+    def _parse_const_declaration(self, line: str, line_index: int, file_path: str,
+                               symbols: Dict[str, SymbolInfo]) -> None:
+        """Parse const declaration and create symbol."""
+        const_match = re.match(r'const\s+(\w+)', line)
+        if const_match:
+            const_name = const_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, const_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="const",
+                file=file_path,
+                line=line_index + 1
+            )
+
+    def _parse_static_declaration(self, line: str, line_index: int, file_path: str,
+                                 symbols: Dict[str, SymbolInfo]) -> None:
+        """Parse static declaration and create symbol."""
+        static_match = re.match(r'static\s+(\w+)', line)
+        if static_match:
+            static_name = static_match.group(1)
+            symbol_id = self._create_symbol_id(file_path, static_name)
+            symbols[symbol_id] = SymbolInfo(
+                type="static",
+                file=file_path,
+                line=line_index + 1
+            )
+
+    def parse_file(self, file_path: str, content: str) -> Tuple[Dict[str, SymbolInfo], FileInfo]:
+        """Parse Rust file using regex patterns."""
+        symbols = {}
+        functions = []
+        classes = []  # Rust structs, enums, traits
+        imports = []
+        package = None
+
+        lines = content.splitlines()
+
         for i, line in enumerate(lines):
             line = line.strip()
             if not line or line.startswith('//') or line.startswith('/*'):
