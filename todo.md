@@ -46,7 +46,10 @@
   - ✅ 已完成：创建 scripts/check_types.py 自动化类型检查脚本
   - ✅ 已完成：添加 .github/workflows/ci.yml CI 配置，包含类型检查
   - ✅ 重大突破：MyPy 错误从 52 个降为 **0 个**！通过忽略缺失导入解决了大部分第三方库问题
-- [ ] 优先处理 `Optional` 与 `Union` 的判空场景，按真实数据流补注解
+- [x] 优先处理 `Optional` 与 `Union` 的判空场景，按真实数据流补注解
+  - ✅ 已完成：分析代码库中 Optional 和 Union 类型使用情况，发现大部分已正确注解
+  - ✅ 修复：为 `ProjectSettings.load_index()` 方法补充 `Optional[Dict[str, Any]]` 返回类型注解
+  - ✅ 验证：运行 MyPy 类型检查，确认 0 个类型错误，类型系统完整性良好
 - [ ] 对抽象基类补足 `ABC` 定义，确保运行时行为与静态检查一致
 - [ ] MyPy 归零后留守自检脚本，保证日常运行简单
   - ✅ 已提前完成：自检脚本 scripts/check_types.py 已就位，支持回归检测

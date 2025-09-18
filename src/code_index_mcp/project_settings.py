@@ -6,11 +6,9 @@ for the Code Index MCP server.
 """
 import os
 import json
-
-
 import tempfile
 import hashlib
-
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 
@@ -226,7 +224,7 @@ class ProjectSettings:
                     f.write(json_data)
             except (OSError, PermissionError, ValueError, RuntimeError):
                 pass
-    def load_index(self):
+    def load_index(self) -> Optional[Dict[str, Any]]:
         """Load code index from JSON format
 
         Returns:
