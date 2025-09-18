@@ -169,15 +169,32 @@ class JSONIndexBuilder:
 
         return all_symbols, all_files, languages, specialized_count, fallback_count
 
+    def _get_optimal_workers(self, max_workers: Optional[int], file_count: int) -> int:
+        """Calculate optimal number of workers for processing."""
+        if max_workers is not None:
+            return max_workers
+        # Use ThreadPoolExecutor for I/O-bound file reading
+        return min(os.cpu_count() or 4, file_count)
+
+    def _process_file_result(self, result: tuple, all_symbols: Dict[str, Any],
+                           all_files: Dict[str, Any], languages: set[str]) -> tuple[int, int]:
+        """Process a single file result and update collections.
+
+        Returns:
+            Tuple of (specialized_increment, fallback_increment)
+        """
+        symbols, file_info_dict, language, is_specialized = result
+        all_symbols.update(symbols)
+        all_files.update(file_info_dict)
+        languages.add(language)
+
+        return (1, 0) if is_specialized else (0, 1)
+
     def _process_files_parallel(self, files_to_process: List[str], specialized_extensions: set[str],
                                max_workers: Optional[int], all_symbols: Dict[str, Any],
                                all_files: Dict[str, Any], languages: set[str]) -> tuple[int, int]:
         """Process files in parallel using ThreadPoolExecutor."""
-        # Use ThreadPoolExecutor for I/O-bound file reading
-        # ProcessPoolExecutor has issues with strategy sharing
-        if max_workers is None:
-            max_workers = min(os.cpu_count() or 4, len(files_to_process))
-
+        max_workers = self._get_optimal_workers(max_workers, len(files_to_process))
         logger.info(f"Using parallel processing with {max_workers} workers")
 
         specialized_count = 0
@@ -193,19 +210,12 @@ class JSONIndexBuilder:
             # Process completed tasks
             processed = 0
             for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
                 result = future.result()
 
                 if result:
-                    symbols, file_info_dict, language, is_specialized = result
-                    all_symbols.update(symbols)
-                    all_files.update(file_info_dict)
-                    languages.add(language)
-
-                    if is_specialized:
-                        specialized_count += 1
-                    else:
-                        fallback_count += 1
+                    spec_inc, fall_inc = self._process_file_result(result, all_symbols, all_files, languages)
+                    specialized_count += spec_inc
+                    fallback_count += fall_inc
 
                 processed += 1
                 if processed % 100 == 0:
@@ -218,22 +228,16 @@ class JSONIndexBuilder:
                                   languages: set[str]) -> tuple[int, int]:
         """Process files sequentially."""
         logger.info("Using sequential processing")
-        
+
         specialized_count = 0
         fallback_count = 0
 
         for file_path in files_to_process:
             result = self._process_file(file_path, specialized_extensions)
             if result:
-                symbols, file_info_dict, language, is_specialized = result
-                all_symbols.update(symbols)
-                all_files.update(file_info_dict)
-                languages.add(language)
-
-                if is_specialized:
-                    specialized_count += 1
-                else:
-                    fallback_count += 1
+                spec_inc, fall_inc = self._process_file_result(result, all_symbols, all_files, languages)
+                specialized_count += spec_inc
+                fallback_count += fall_inc
 
         return specialized_count, fallback_count
 

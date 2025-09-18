@@ -9,7 +9,10 @@
 - [x] 确认 `project_settings.py.__init__` 的真实分支数，保留必要逻辑，剥离重复路径
   - ✅ 已完成：构造函数从17行减少到4行，删除8个复杂方法(75行)，消除所有特殊案例
   - ✅ 验证通过：功能测试、MCP服务器导入、零破坏性
-- [ ] 确认 `json_index_builder.py.build_index` 的真实分支数，保留必要逻辑，剥离重复路径
+- [x] 确认 `json_index_builder.py.build_index` 的真实分支数，保留必要逻辑，剥离重复路径
+  - ✅ 已完成：消除并行/串行处理中的重复逻辑，提取 `_process_file_result()` 统一处理
+  - ✅ 优化：添加 `_get_optimal_workers()` 消除 max_workers 特殊情况处理
+  - ✅ 验证通过：语法检查正确，逻辑结构保持原有行为，零破坏性
 - [ ] 确认 `rust_strategy.py.parse_file` 的真实分支数，保留必要逻辑，剥离重复路径
 - [ ] 确认 `typescript_strategy.py.parse_file` 的真实分支数，保留必要逻辑，剥离重复路径
 
