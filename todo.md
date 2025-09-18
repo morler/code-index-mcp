@@ -50,7 +50,10 @@
   - ✅ 已完成：分析代码库中 Optional 和 Union 类型使用情况，发现大部分已正确注解
   - ✅ 修复：为 `ProjectSettings.load_index()` 方法补充 `Optional[Dict[str, Any]]` 返回类型注解
   - ✅ 验证：运行 MyPy 类型检查，确认 0 个类型错误，类型系统完整性良好
-- [ ] 对抽象基类补足 `ABC` 定义，确保运行时行为与静态检查一致
+- [x] 对抽象基类补足 `ABC` 定义，确保运行时行为与静态检查一致
+  - ✅ 已完成：修复 `BaseService` 错误继承 `ABC`，改为普通基类
+  - ✅ 验证：`ParsingStrategy` 和 `SearchStrategy` 正确使用 `ABC` 和 `@abstractmethod`
+  - ✅ 确认：所有抽象方法定义正确，类型检查通过，零错误
 - [ ] MyPy 归零后留守自检脚本，保证日常运行简单
   - ✅ 已提前完成：自检脚本 scripts/check_types.py 已就位，支持回归检测
 

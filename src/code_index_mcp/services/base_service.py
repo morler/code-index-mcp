@@ -5,14 +5,13 @@ This module defines the base service pattern that all domain services inherit fr
 ensuring consistent behavior and shared functionality across the service layer.
 """
 
-from abc import ABC
 from typing import Optional
 from mcp.server.fastmcp import Context
 
 from ..utils import ContextHelper, ValidationHelper
 
 
-class BaseService(ABC):
+class BaseService:
     """
     Base class for all MCP services.
 
