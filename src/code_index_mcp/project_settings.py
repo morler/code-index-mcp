@@ -65,125 +65,42 @@ class ProjectSettings:
         self.skip_load = skip_load
         self.available_strategies: list[SearchStrategy] = []
         self.refresh_available_strategies()
+        self.settings_path = self._get_settings_path()
 
-        # Determine and create temporary directory
-        temp_base_dir = self._setup_temp_directory()
-        
-        # Setup settings path
-        self._setup_settings_path(temp_base_dir)
+    def _get_settings_path(self) -> str:
+        """Get the settings directory path with clean fallback logic."""
+        safe_dir = self._get_safe_directory()
 
-    def _setup_temp_directory(self) -> str:
-        """Setup and return the base temporary directory path."""
-        try:
-            system_temp = tempfile.gettempdir()
-            system_temp = self._ensure_valid_temp_dir(system_temp)
-
-            # Create code_indexer directory
-            temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
-            os.makedirs(temp_base_dir, exist_ok=True)
-            return temp_base_dir
-        except (OSError, PermissionError):
-            return self._create_fallback_temp_dir()
-
-    def _ensure_valid_temp_dir(self, system_temp: str) -> str:
-        """Ensure the temporary directory exists and is writable."""
-        if not os.path.exists(system_temp):
-            return self._get_fallback_dir()
-
-        if not os.access(system_temp, os.W_OK):
-            return self._get_writable_fallback_dir()
-
-        return system_temp
-
-    def _get_fallback_dir(self) -> str:
-        """Get fallback directory when system temp doesn't exist."""
-        if self.base_path and os.path.exists(self.base_path):
-            return self.base_path
-        return os.path.expanduser("~")
-
-    def _get_writable_fallback_dir(self) -> str:
-        """Get writable fallback directory when system temp is not writable."""
-        if (self.base_path and os.path.exists(self.base_path) and
-            os.access(self.base_path, os.W_OK)):
-            return self.base_path
-        return os.path.expanduser("~")
-
-    def _create_fallback_temp_dir(self) -> str:
-        """Create fallback temporary directory in project or home."""
-        if self.base_path and os.path.exists(self.base_path):
-            temp_base_dir = os.path.join(self.base_path, ".code_indexer")
-        else:
-            temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-
-        os.makedirs(temp_base_dir, exist_ok=True)
-        return temp_base_dir
-
-    def _setup_settings_path(self, temp_base_dir: str) -> None:
-        """Setup the settings path using the temporary directory."""
-        try:
-            self.settings_path = self._create_settings_path(temp_base_dir)
-            self.ensure_settings_dir()
-        except (OSError, PermissionError, ValueError):
-            self.settings_path = self._create_fallback_settings_path()
-
-    def _create_settings_path(self, temp_base_dir: str) -> str:
-        """Create settings path using temp directory."""
+        # Create unique directory for this project
         if self.base_path:
             path_hash = hashlib.md5(self.base_path.encode()).hexdigest()
-            return os.path.join(temp_base_dir, path_hash)
-        return os.path.join(temp_base_dir, "default")
-
-    def _create_fallback_settings_path(self) -> str:
-        """Create fallback settings path in project or home directory."""
-        if self.base_path and os.path.exists(self.base_path):
-            fallback_dir = os.path.join(
-                self.base_path, ".code_indexer",
-                hashlib.md5(self.base_path.encode()).hexdigest()
-            )
+            settings_dir = os.path.join(safe_dir, SETTINGS_DIR, path_hash)
         else:
-            fallback_dir = os.path.join(
-                os.path.expanduser("~"), ".code_indexer",
-                "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest()
-            )
+            settings_dir = os.path.join(safe_dir, SETTINGS_DIR, "default")
 
-        os.makedirs(fallback_dir, exist_ok=True)
-        return fallback_dir
+        os.makedirs(settings_dir, exist_ok=True)
+        return settings_dir
+
+    def _get_safe_directory(self) -> str:
+        """Get the first writable directory from our priority list."""
+        candidates = [
+            tempfile.gettempdir(),
+            self.base_path,
+            os.path.expanduser("~")
+        ]
+
+        for path in candidates:
+            if path and os.path.exists(path) and os.access(path, os.W_OK):
+                return path
+
+        raise RuntimeError("No writable directory available")
+
 
     def ensure_settings_dir(self):
         """Ensure settings directory exists"""
-
-        try:
-            if not os.path.exists(self.settings_path):
-                # Create directory structure
-                os.makedirs(self.settings_path, exist_ok=True)
-            else:
-                pass
-
-            # Check if directory is writable
-            if not os.access(self.settings_path, os.W_OK):
-                # If directory is not writable, use .code_indexer in project or home directory as fallback
-                if self.base_path and os.path.exists(self.base_path) and os.access(self.base_path, os.W_OK):
-                    fallback_dir = os.path.join(self.base_path, ".code_indexer",
-                                              os.path.basename(self.settings_path))
-                else:
-                    fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
-                                              os.path.basename(self.settings_path))
-
-                self.settings_path = fallback_dir
-                if not os.path.exists(fallback_dir):
-                    os.makedirs(fallback_dir, exist_ok=True)
-        except (OSError, PermissionError, ValueError, RuntimeError):
-            # If unable to create settings directory, use .code_indexer in project or home directory
-            if self.base_path and os.path.exists(self.base_path):
-                fallback_dir = os.path.join(self.base_path, ".code_indexer",
-                                          hashlib.md5(self.base_path.encode()).hexdigest())
-            else:
-                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
-                                          "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
-
-            self.settings_path = fallback_dir
-            if not os.path.exists(fallback_dir):
-                os.makedirs(fallback_dir, exist_ok=True)
+        # Directory is already created in _get_settings_path, just verify
+        if not os.path.exists(self.settings_path):
+            os.makedirs(self.settings_path, exist_ok=True)
 
     def get_config_path(self):
         """Get the path to the configuration file"""
