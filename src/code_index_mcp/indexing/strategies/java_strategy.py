@@ -158,6 +158,86 @@ class JavaParsingStrategy(ParsingStrategy):
             self._traverse_node_single_pass(child, context, current_class=current_class,
                                            current_method=current_method)
 
+    def _handle_class_declaration(self, node, context: 'TraversalContext',
+                                current_class: Optional[str], current_method: Optional[str]) -> None:
+        """Handle class declaration nodes."""
+        name = self._get_java_class_name(node, context.content)
+        if name:
+            symbol_id = self._create_symbol_id(context.file_path, name)
+            symbol_info = SymbolInfo(
+                type="class",
+                file=context.file_path,
+                line=node.start_point[0] + 1
+            )
+            context.symbols[symbol_id] = symbol_info
+            context.symbol_lookup[name] = symbol_id
+            context.classes.append(name)
+
+            # Traverse class body with updated context
+            for child in node.children:
+                self._traverse_node_single_pass(child, context, current_class=name, current_method=current_method)
+
+    def _handle_method_declaration(self, node, context: 'TraversalContext',
+                                 current_class: Optional[str], current_method: Optional[str]) -> None:
+        """Handle method declaration nodes."""
+        name = self._get_java_method_name(node, context.content)
+        if name:
+            # Build full method name with class context
+            full_name = f"{current_class}.{name}" if current_class else name
+
+            symbol_id = self._create_symbol_id(context.file_path, full_name)
+            symbol_info = SymbolInfo(
+                type="method",
+                file=context.file_path,
+                line=node.start_point[0] + 1,
+                signature=self._get_java_method_signature(node, context.content)
+            )
+            context.symbols[symbol_id] = symbol_info
+            context.symbol_lookup[full_name] = symbol_info
+            context.symbol_lookup[name] = symbol_info  # Also index by method name alone
+            context.functions.append(full_name)
+
+            # Traverse method body with updated context
+            for child in node.children:
+                self._traverse_node_single_pass(child, context, current_class=current_class,
+                                               current_method=symbol_id)
+
+    def _handle_method_invocation(self, node, context: 'TraversalContext',
+                                 current_method: Optional[str]) -> None:
+        """Handle method invocation nodes to analyze calls."""
+        if not current_method:
+            return
+
+        called_method = self._get_called_method_name(node, context.content)
+        if called_method:
+            self._add_method_call_relationship(called_method, context, current_method)
+
+    def _add_method_call_relationship(self, called_method: str, context: 'TraversalContext',
+                                    current_method: str) -> None:
+        """Add relationship between caller and called method."""
+        # Use O(1) lookup instead of O(n) iteration
+        if called_method in context.symbol_lookup:
+            symbol_id = context.symbol_lookup[called_method]
+            symbol_info = context.symbols[symbol_id]
+            if current_method not in symbol_info.called_by:
+                symbol_info.called_by.append(current_method)
+        else:
+            # Try to find method with class prefix
+            for name, sid in context.symbol_lookup.items():
+                if name.endswith(f".{called_method}"):
+                    symbol_info = context.symbols[sid]
+                    if current_method not in symbol_info.called_by:
+                        symbol_info.called_by.append(current_method)
+                    break
+
+    def _handle_import_declaration(self, node, context: 'TraversalContext') -> None:
+        """Handle import declaration nodes."""
+        import_text = context.content[node.start_byte:node.end_byte]
+        # Extract import path (remove 'import' keyword and semicolon)
+        import_path = import_text.replace('import', '').replace(';', '').strip()
+        if import_path:
+            context.imports.append(import_path)
+
     def _get_java_class_name(self, node, content: str) -> Optional[str]:
         for child in node.children:
             if child.type == 'identifier':

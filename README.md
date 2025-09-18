@@ -171,6 +171,8 @@ For contributing or local development:
    uv sync
    ```
 
+> **Important:** Activate the provided virtual environment (.venv\Scripts\activate) or use uv run code-index-mcp before running helper scripts such as python run.py. These commands require the project dependencies to be installed.
+
 2. **Configure for local development:**
    ```json
    {

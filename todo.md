@@ -13,7 +13,11 @@
   - ✅ 已完成：消除并行/串行处理中的重复逻辑，提取 `_process_file_result()` 统一处理
   - ✅ 优化：添加 `_get_optimal_workers()` 消除 max_workers 特殊情况处理
   - ✅ 验证通过：语法检查正确，逻辑结构保持原有行为，零破坏性
-- [ ] 确认 `rust_strategy.py.parse_file` 的真实分支数，保留必要逻辑，剥离重复路径
+- [x] 确认 `rust_strategy.py.parse_file` 的真实分支数，保留必要逻辑，剥离重复路径
+  - ✅ 已完成：消除重复函数定义，从9个if/elif分支简化为数据驱动的模式匹配
+  - ✅ 优化：引入 `PatternHandler` 消除所有重复的匹配-提取-创建模式
+  - ✅ 简化：主解析函数从100+行减少到30行，逻辑清晰无特殊案例
+  - ✅ 验证通过：语法检查正确，功能测试通过，解析5种Rust符号类型
 - [ ] 确认 `typescript_strategy.py.parse_file` 的真实分支数，保留必要逻辑，剥离重复路径
 
 ### 🔧 代码去重与重构
