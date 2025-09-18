@@ -160,7 +160,7 @@ class FileWalker:
         """
         total_files = 0
         total_size = 0
-        extensions = {}
+        extensions: dict[str, int] = {}
 
         for file_path, stat_result in self.walk_files_with_stats(project_path):
             total_files += 1

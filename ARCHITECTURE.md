@@ -2,7 +2,7 @@
 
 ## Overview
 
-Code Index MCP is a Model Context Protocol (MCP) server that provides intelligent code indexing and analysis capabilities. The system follows SCIP (Source Code Intelligence Protocol) standards and uses a service-oriented architecture with clear separation of concerns.
+Code Index MCP is a Model Context Protocol (MCP) server that provides intelligent code indexing, search, and analysis capabilities. The system uses a **service-oriented architecture** with Tree-sitter based parsing strategies and JSON-based persistent indexing.
 
 ## High-Level Architecture
 
@@ -12,11 +12,11 @@ Code Index MCP is a Model Context Protocol (MCP) server that provides intelligen
 ├─────────────────────────────────────────────────────────────────┤
 │                        Service Layer                           │
 ├─────────────────────────────────────────────────────────────────┤
-│                        SCIP Core Layer                         │
+│                   JSON Index Management                        │
 ├─────────────────────────────────────────────────────────────────┤
-│                     Language Strategies                        │
+│                   Tree-sitter Strategies                       │
 ├─────────────────────────────────────────────────────────────────┤
-│                    Technical Tools Layer                       │
+│                    Search & Utils Layer                        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -28,135 +28,172 @@ Code Index MCP is a Model Context Protocol (MCP) server that provides intelligen
 **Key Components**:
 - MCP tool definitions (`@mcp.tool()`)
 - Error handling and response formatting
-- User interaction and guidance
+- Context management and lifecycle
 
-**MCP Tools**:
-- `set_project_path` - Initialize project indexing
-- `find_files` - File discovery with patterns
-- `get_file_summary` - File analysis and metadata
-- `search_code_advanced` - Content search across files
+**MCP Tools** (12 tools total):
+- `set_project_path` - Initialize project path for indexing
+- `find_files` - File discovery with glob patterns
+- `get_file_summary` - File analysis and complexity metrics
+- `search_code_advanced` - Advanced code search with multiple backends
 - `refresh_index` - Manual index rebuilding
 - `get_file_watcher_status` - File monitoring status
-- `configure_file_watcher` - File watcher settings
+- `configure_file_watcher` - File watcher configuration
+- `get_settings_info` - System settings and debug info
+- `create_temp_directory` - Temporary directory management
+- `check_temp_directory` - Directory status validation
+- `clear_settings` - Reset all settings and cache
+- `refresh_search_tools` - Re-detect available search tools
+
+**MCP Resources** (3 resources):
+- `config://code-indexer` - Current project configuration
+- `files://{file_path}` - Individual file content access
+- `structure://project` - Project structure tree
 
 ### 2. Service Layer (`services/`)
 **Purpose**: Business logic orchestration and workflow management
 
 **Key Services**:
+- `BaseService` - Common functionality and context management
 - `ProjectManagementService` - Project lifecycle and initialization
-- `FileWatcherService` - Real-time file monitoring and auto-refresh
-- `IndexManagementService` - Index rebuild operations
-- `CodeIntelligenceService` - File analysis and symbol intelligence
+- `SearchService` - Advanced code search with tool auto-detection
 - `FileDiscoveryService` - File pattern matching and discovery
-- `SearchService` - Advanced code search capabilities
+- `CodeIntelligenceService` - File analysis and symbol intelligence
+- `IndexManagementService` - Index rebuild and cache operations
+- `SettingsService` - Configuration and settings management
+- `SystemManagementService` - File watcher and system operations
 
-**Architecture Pattern**: Service delegation with clear business boundaries
+**Architecture Pattern**: Service delegation with shared context helper
 
-### 3. SCIP Core Layer (`scip/core/`)
-**Purpose**: Language-agnostic SCIP protocol implementation
+### 3. JSON Index Management (`indexing/`)
+**Purpose**: Persistent index storage and retrieval
 
 **Core Components**:
-- `SCIPSymbolManager` - Standard SCIP symbol ID generation
-- `LocalReferenceResolver` - Cross-file reference resolution
-- `PositionCalculator` - AST/Tree-sitter position conversion
-- `MonikerManager` - External package dependency handling
+- `JSONIndexManager` - Index lifecycle and persistence
+- `JSONIndexBuilder` - Multi-threaded index construction
+- `IndexSerializer` - JSON/msgpack serialization with fallback
+- `FileWalker` - Unified file traversal logic
 
-**Standards Compliance**: Full SCIP protocol buffer implementation
+**Features**:
+- **Performance**: Msgpack binary format with JSON fallback
+- **Concurrency**: ThreadPoolExecutor for parallel processing
+- **Caching**: Persistent index with incremental updates
 
-### 4. Language Strategies (`scip/strategies/`)
-**Purpose**: Language-specific code analysis using two-phase processing
+### 4. Tree-sitter Strategies (`indexing/strategies/`)
+**Purpose**: Language-specific code parsing using Tree-sitter
 
-**Strategy Pattern Implementation**:
-- `BaseStrategy` - Abstract interface and common functionality
-- `PythonStrategy` - Python AST analysis
-- `JavaScriptStrategy` - JavaScript/TypeScript Tree-sitter analysis
-- `JavaStrategy` - Java Tree-sitter analysis
-- `ObjectiveCStrategy` - Objective-C Tree-sitter analysis
-- `FallbackStrategy` - Generic text-based analysis
+**Dual Strategy Architecture**:
+- **Specialized Strategies** (7 languages): Full AST parsing with symbol extraction
+  - `PythonParsingStrategy` - Python functions, classes, imports
+  - `JavaScriptParsingStrategy` - JS/TS functions, classes, interfaces
+  - `TypeScriptParsingStrategy` - TS-specific enhancements
+  - `JavaParsingStrategy` - Java classes, methods, fields
+  - `GoParsingStrategy` - Go functions, types, interfaces
+  - `ObjectiveCParsingStrategy` - Objective-C classes, methods
+  - `ZigParsingStrategy` - Zig functions, structs, enums
+- **Fallback Strategy** (50+ file types): Basic file indexing
+  - Handles C/C++, Rust, web files, configs, etc.
+  - Provides consistent interface with minimal parsing
 
-**Two-Phase Analysis**:
-1. **Phase 1**: Symbol definition collection
-2. **Phase 2**: Reference resolution and SCIP document generation
+**Strategy Factory**: Thread-safe factory with auto-detection based on file extensions
 
-### 5. Technical Tools Layer (`tools/`)
-**Purpose**: Low-level technical capabilities
+### 5. Search & Utils Layer
+**Purpose**: Code search and utility functions
 
-**Tool Categories**:
-- `filesystem/` - File system operations and pattern matching
-- `scip/` - SCIP index operations and symbol analysis
-- `config/` - Configuration and settings management
-- `monitoring/` - File watching and system monitoring
+**Search Engine Abstraction** (`search/`):
+- **Auto-detecting hierarchy**: ugrep → ripgrep → ag → grep → basic
+- **Advanced features**: Fuzzy search, regex patterns, context lines
+- **Performance optimization**: Tool-specific optimizations
+
+**Utilities** (`utils/`):
+- `FileWalker` - Unified file traversal with filtering
+- `PathMatcher` - Pattern matching and validation
+- `ErrorHandler` - MCP error formatting and handling
 
 ## Data Flow Architecture
 
 ### File Analysis Workflow
 ```
-User Request → Service Layer → SCIP Strategy → Core Components → SCIP Documents
+User Request → Service Layer → Strategy Factory → Tree-sitter Parsing → JSON Index
 ```
 
 ### Index Management Workflow
 ```
-File Changes → File Watcher → Index Management Service → Strategy Factory → Updated Index
+File Changes → File Watcher → Index Management Service → JSONIndexBuilder → Persistent Cache
 ```
 
 ### Search Workflow
 ```
-Search Query → Search Service → Advanced Search Tools → Filtered Results
+Search Query → Search Service → Auto-detected Tools (ugrep/ripgrep/ag/grep) → Filtered Results
 ```
 
-## SCIP Implementation Details
+## Implementation Details
 
-### Symbol ID Format
+### Index Format
+```json
+{
+  "metadata": {
+    "index_version": "2.0.0-strategy",
+    "timestamp": "2025-09-18T14:55:17Z",
+    "total_files": 165,
+    "total_symbols": 1119
+  },
+  "files": {
+    "file_path": {
+      "symbols": {"functions": [...], "classes": [...], "imports": [...]},
+      "metadata": {"language": "python", "size": 1024}
+    }
+  }
+}
 ```
-scip-{language} {manager} {package} [version] {descriptors}
-```
-
-**Examples**:
-- Local: `scip-python local myproject src/main.py/MyClass#method().`
-- External: `scip-python pip requests 2.31.0 sessions/Session#get().`
 
 ### Language Support Strategy
 
-**Parsing Approaches**:
-- **Python**: Native AST module
-- **JavaScript/TypeScript**: Tree-sitter
-- **Java**: Tree-sitter  
-- **Objective-C**: Tree-sitter
-- **Others**: Fallback text analysis
+**Tree-sitter Parsing** (7 languages with full symbol extraction):
+- **Python**: Functions, classes, methods, imports, decorators
+- **JavaScript/TypeScript**: Functions, classes, interfaces, methods, exports
+- **Java**: Classes, methods, fields, interfaces, packages
+- **Go**: Functions, types, interfaces, structs, imports
+- **Objective-C**: Classes, methods, protocols, properties
+- **Zig**: Functions, structs, enums, unions, constants
 
-**Supported Code Intelligence**:
-- Symbol definitions (functions, classes, variables)
-- Import/export tracking
-- Cross-file reference resolution
-- External dependency management
-- Position-accurate symbol ranges
+**Fallback Strategy** (50+ file types with basic indexing):
+- File-level metadata without symbol extraction
+- Consistent interface for unsupported languages
+
+**Symbol Information Captured**:
+- Symbol definitions with precise line/column positions
+- Import/export relationships
+- Symbol types and accessibility
+- Documentation strings and comments
 
 ## Configuration and Extensibility
 
-### Package Manager Integration
-- **Python**: pip, conda, poetry detection
-- **JavaScript**: npm, yarn package.json parsing
-- **Java**: Maven pom.xml, Gradle build files
-- **Configuration-driven**: Easy addition of new package managers
-
 ### File Watcher System
 - **Real-time monitoring**: Watchdog-based file system events
-- **Debounced rebuilds**: 4-6 second batching of rapid changes
-- **Configurable patterns**: Customizable include/exclude rules
-- **Thread-safe**: ThreadPoolExecutor for concurrent rebuilds
+- **Debounced rebuilds**: Configurable delay for batching rapid changes
+- **Smart filtering**: Excludes build dirs, temporary files, version control
+- **Thread-safe**: Concurrent file monitoring and index updates
 
-## Performance Characteristics
+### Search Tool Auto-Detection
+- **Hierarchical fallback**: ugrep → ripgrep → ag → grep → basic Python
+- **Feature detection**: Automatically uses best available tool
+- **Performance optimization**: Tool-specific optimizations and patterns
+- **Refresh capability**: Dynamic re-detection of newly installed tools
+
+## Performance Characteristics (Current Baseline)
 
 ### Indexing Performance
-- **Incremental updates**: File-level granular rebuilds
-- **Parallel processing**: Concurrent file analysis
-- **Memory efficient**: Streaming SCIP document generation
-- **Cache optimization**: Symbol table reuse across phases
+- **Index time**: 1.13s for 165 files (12% improvement with msgpack)
+- **Memory usage**: 2.95 MiB peak (5% improvement)
+- **Symbol extraction**: 1,119 symbols across 12 languages
+- **Parallel processing**: ThreadPoolExecutor for concurrent file analysis
+- **Caching**: Msgpack binary format with JSON fallback
 
 ### Search Performance
-- **Advanced tools**: ripgrep, ugrep, ag integration
-- **Pattern optimization**: Glob-based file filtering
-- **Result streaming**: Large result set handling
+- **Advanced tools**: ugrep (preferred), ripgrep, ag, grep backends
+- **Pattern optimization**: Glob-based file filtering and regex support
+- **Context support**: Configurable before/after line context
+- **Large datasets**: Efficient handling of large codebases
 
 ## Error Handling and Reliability
 
@@ -190,44 +227,60 @@ scip-{language} {manager} {package} [version] {descriptors}
 
 ```
 src/code_index_mcp/
-├── server.py                   # MCP interface layer
+├── server.py                   # MCP interface layer (12 tools, 3 resources)
 ├── services/                   # Business logic services
+│   ├── base_service.py         # Common service functionality
 │   ├── project_management_service.py
-│   ├── file_watcher_service.py
-│   ├── index_management_service.py
+│   ├── search_service.py       # Advanced search with tool detection
+│   ├── file_discovery_service.py
 │   ├── code_intelligence_service.py
-│   └── ...
-├── scip/                       # SCIP implementation
-│   ├── core/                   # Language-agnostic core
-│   │   ├── symbol_manager.py
-│   │   ├── local_reference_resolver.py
-│   │   ├── position_calculator.py
-│   │   └── moniker_manager.py
-│   ├── strategies/             # Language-specific strategies
-│   │   ├── base_strategy.py
-│   │   ├── python_strategy.py
-│   │   ├── javascript_strategy.py
-│   │   └── ...
-│   └── factory.py              # Strategy selection
-├── tools/                      # Technical capabilities
-│   ├── filesystem/
-│   ├── scip/
-│   ├── config/
-│   └── monitoring/
-├── indexing/                   # Index management
-└── utils/                      # Shared utilities
+│   ├── index_management_service.py
+│   ├── settings_service.py
+│   └── system_management_service.py
+├── indexing/                   # JSON index management
+│   ├── json_index_manager.py   # Index lifecycle and persistence
+│   ├── json_index_builder.py   # Multi-threaded index construction
+│   ├── serialization.py        # Msgpack/JSON serialization
+│   └── strategies/             # Language-specific parsing
+│       ├── strategy_factory.py # Thread-safe strategy selection
+│       ├── python_strategy.py  # Tree-sitter Python parsing
+│       ├── javascript_strategy.py
+│       ├── typescript_strategy.py
+│       ├── java_strategy.py
+│       ├── go_strategy.py
+│       ├── objective_c_strategy.py
+│       ├── zig_strategy.py
+│       └── fallback_strategy.py # Basic file indexing
+├── search/                     # Search engine abstraction
+│   ├── advanced_search_strategy.py
+│   └── basic_search_strategy.py
+├── utils/                      # Shared utilities
+│   ├── file_walker.py          # Unified file traversal
+│   ├── path_matcher.py         # Pattern matching
+│   └── error_handler.py        # MCP error handling
+├── tools/                      # Legacy tool components
+├── project_settings.py         # Project configuration
+└── constants.py                # System constants
 ```
 
 ## Key Design Principles
 
-1. **Standards Compliance**: Full SCIP protocol adherence
-2. **Language Agnostic**: Core components independent of specific languages
-3. **Extensible**: Easy addition of new languages and features
-4. **Performance**: Efficient indexing and search operations
-5. **Reliability**: Fault-tolerant with comprehensive error handling
-6. **Maintainability**: Clear separation of concerns and modular design
+1. **Service-Oriented Architecture**: Clear separation of business logic in services
+2. **Language Strategy Pattern**: Extensible parsing with Tree-sitter strategies
+3. **Performance Optimization**: Multi-threading, caching, and tool auto-detection
+4. **Reliability**: Fault-tolerant with comprehensive error handling and validation
+5. **MCP Protocol Compliance**: Full MCP tool and resource implementation
+6. **Maintainability**: Modular design with shared utilities and base classes
+
+## Quality Metrics (Current Status)
+
+- **Pylint Score**: 9.14/10 (+1.09 improvement)
+- **MyPy Errors**: 56 (maintained baseline, zero regressions)
+- **Test Coverage**: 36% with 29/30 tests passing
+- **Index Performance**: 1.13s for 165 files, 1,119 symbols
+- **Memory Usage**: 2.95 MiB peak (5% improvement with optimizations)
 
 ---
 
-*Last updated: 2025-01-14*
-*Architecture version: 2.1.0*
+*Last updated: 2025-09-18*
+*Architecture version: 2.0.0-strategy*
