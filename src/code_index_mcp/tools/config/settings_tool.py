@@ -68,11 +68,12 @@ class SettingsTool:
         """
         temp_dir = self.get_temp_directory_path()
 
-        result = {
+        result: Dict[str, Any] = {
             "temp_directory": temp_dir,
             "temp_root": tempfile.gettempdir(),
             "exists": os.path.exists(temp_dir),
-            "is_directory": os.path.isdir(temp_dir) if os.path.exists(temp_dir) else False
+            "is_directory": os.path.isdir(temp_dir) if os.path.exists(temp_dir) else False,
+            "subdirectories": []
         }
 
         # If the directory exists, list its contents

@@ -30,7 +30,7 @@ class PythonParsingStrategy(ParsingStrategy):
         try:
             tree = ast.parse(content)
             # Single-pass visitor that handles everything at once
-            visitor = SinglePassVisitor(symbols, functions, classes, imports, file_path)
+            visitor = SinglePassVisitor(symbols, list(symbols.keys()), [], imports, file_path)
             visitor.visit(tree)
         except SyntaxError as e:
             logger.warning(f"Syntax error in Python file {file_path}: {e}")
@@ -40,7 +40,7 @@ class PythonParsingStrategy(ParsingStrategy):
         file_info = FileInfo(
             language=self.get_language_name(),
             line_count=len(content.splitlines()),
-            symbols={"functions": functions, "classes": classes},
+            symbols={"functions": list(symbols.keys()), "classes": []},
             imports=imports
         )
 

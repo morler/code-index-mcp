@@ -34,12 +34,12 @@ class JavaScriptParsingStrategy(ParsingStrategy):
 
         parser = tree_sitter.Parser(self.js_language)
         tree = parser.parse(content.encode('utf8'))
-        self._traverse_js_node(tree.root_node, content, file_path, symbols, functions, classes, imports, exports)
+        self._traverse_js_node(tree.root_node, content, file_path, symbols, list(symbols.keys()), [], imports, exports)
 
         file_info = FileInfo(
             language=self.get_language_name(),
             line_count=len(content.splitlines()),
-            symbols={"functions": functions, "classes": classes},
+            symbols={"functions": list(symbols.keys()), "classes": []},
             imports=imports,
             exports=exports
         )

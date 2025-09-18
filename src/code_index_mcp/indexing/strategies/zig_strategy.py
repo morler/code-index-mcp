@@ -46,7 +46,7 @@ class ZigParsingStrategy(ParsingStrategy):
         file_info = FileInfo(
             language=self.get_language_name(),
             line_count=len(content.splitlines()),
-            symbols={"functions": functions, "classes": classes},
+            symbols={"functions": list(symbols.keys()), "classes": []},
             imports=imports
         )
 
