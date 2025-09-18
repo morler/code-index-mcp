@@ -5,6 +5,7 @@ This replaces the monolithic parser implementation with a clean,
 maintainable Strategy pattern architecture.
 """
 
+import json
 import logging
 import os
 import time
@@ -15,6 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
+from .serialization import IndexSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,7 @@ class JSONIndexBuilder:
         self.in_memory_index: Optional[Dict[str, Any]] = None
         self.strategy_factory = StrategyFactory()
         self.file_filter = FileFilter(additional_excludes)
+        self.serializer = IndexSerializer(prefer_binary=True)
 
         logger.info(f"Initialized JSON index builder for {project_path}")
         strategy_info = self.strategy_factory.get_strategy_info()
@@ -331,14 +334,11 @@ class JSONIndexBuilder:
         Returns:
             True if successful, False otherwise
         """
-        try:
-            import json
-            with open(index_path, 'w', encoding='utf-8') as f:
-                json.dump(index, f, indent=2, ensure_ascii=False)
+        if self.serializer.save(index, index_path):
             logger.info(f"Saved index to {index_path}")
             return True
-        except (OSError, ValueError, TypeError) as e:
-            logger.error(f"Failed to save index to {index_path}: {e}")
+        else:
+            logger.error(f"Failed to save index to {index_path}")
             return False
 
     def load_index(self, index_path: str) -> Optional[Dict[str, Any]]:
@@ -351,22 +351,14 @@ class JSONIndexBuilder:
         Returns:
             Index data if successful, None otherwise
         """
-        try:
-            if not os.path.exists(index_path):
-                logger.debug(f"Index file not found: {index_path}")
-                return None
-
-            import json
-            with open(index_path, 'r', encoding='utf-8') as f:
-                index = json.load(f)
-
+        index = self.serializer.load(index_path)
+        if index is not None:
             # Cache in memory
             self.in_memory_index = index
             logger.info(f"Loaded index from {index_path}")
             return index
-
-        except (OSError, ValueError, TypeError) as e:
-            logger.error(f"Failed to load index from {index_path}: {e}")
+        else:
+            logger.debug(f"No index found at {index_path}")
             return None
 
     def get_parsing_statistics(self) -> Dict[str, Any]:

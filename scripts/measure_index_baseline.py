@@ -96,8 +96,7 @@ def main() -> None:
     output = json.dumps(metrics, indent=2)
 
     if args.output:
-        args.output.write_text(output + '
-', encoding='utf-8')
+        args.output.write_text(output + '\n', encoding='utf-8')
     print(output)
 
 

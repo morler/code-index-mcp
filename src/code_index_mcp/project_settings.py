@@ -134,7 +134,7 @@ class ProjectSettings:
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
             with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
+                json.dump(config, f, ensure_ascii=False)
 
 
             return config
