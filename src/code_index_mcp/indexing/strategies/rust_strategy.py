@@ -207,7 +207,7 @@ class RustParsingStrategy(ParsingStrategy):
             match = re.match(r'(?:pub\s+)?fn\s+(\w+)\s*\(', line)
             if match:
                 return match.group(1)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             pass
         return None
 

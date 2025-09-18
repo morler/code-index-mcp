@@ -10,7 +10,7 @@ from .base import SearchStrategy, parse_search_output, create_word_boundary_patt
 class GrepStrategy(SearchStrategy):
     """
     Search strategy using the standard 'grep' command-line tool.
-    
+
     This is intended as a fallback for when more advanced tools like
     ugrep, ripgrep, or ag are not available.
     """
@@ -53,7 +53,7 @@ class GrepStrategy(SearchStrategy):
 
         # Prepare search pattern
         search_pattern = pattern
-        
+
         if regex:
             # Use regex mode - check for safety first
             if not is_safe_regex_pattern(pattern):
@@ -78,7 +78,7 @@ class GrepStrategy(SearchStrategy):
         if context_lines > 0:
             cmd.extend(['-A', str(context_lines)])
             cmd.extend(['-B', str(context_lines)])
-            
+
         if file_pattern:
             # Note: grep's --include uses glob patterns, not regex
             cmd.append(f'--include={file_pattern}')
@@ -87,25 +87,25 @@ class GrepStrategy(SearchStrategy):
         cmd.append('--')
         cmd.append(search_pattern)
         cmd.append('.')  # Use current directory since we set cwd=base_path
-        
+
         try:
             # grep exits with 1 if no matches are found, which is not an error.
             # It exits with 0 on success (match found). >1 for errors.
             process = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
+                cmd,
+                capture_output=True,
+                text=True,
                 encoding='utf-8',
                 errors='replace',
                 check=False,
                 cwd=base_path  # Set working directory to project base path for proper pattern resolution
             )
-            
+
             if process.returncode > 1:
                  raise RuntimeError(f"grep failed with exit code {process.returncode}: {process.stderr}")
 
             return parse_search_output(process.stdout, base_path, max_line_length)
-        
+
         except FileNotFoundError:
             raise RuntimeError("'grep' not found. Please install it and ensure it's in your PATH.")
         except Exception as e:

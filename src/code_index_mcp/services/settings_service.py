@@ -124,7 +124,7 @@ class SettingsService(BaseService):
             Dictionary with settings directory, config, stats, and status information
         """
         temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
-        
+
         # Get the actual index directory from the index manager
         index_manager = get_index_manager()
         actual_temp_dir = index_manager.temp_dir if index_manager.temp_dir else temp_dir

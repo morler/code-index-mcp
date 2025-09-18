@@ -32,7 +32,7 @@ class UgrepStrategy(SearchStrategy):
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
-        
+
         Args:
             pattern: The search pattern
             base_path: Directory to search in
@@ -62,10 +62,10 @@ class UgrepStrategy(SearchStrategy):
 
         if not case_sensitive:
             cmd.append('--ignore-case')
-        
+
         if context_lines > 0:
             cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
-            
+
         if file_pattern:
             cmd.extend(['--include', file_pattern])
 
@@ -84,7 +84,7 @@ class UgrepStrategy(SearchStrategy):
                 check=False,  # Do not raise exception on non-zero exit codes
                 cwd=base_path  # Set working directory to project base path for proper pattern resolution
             )
-            
+
             # ugrep exits with 1 if no matches are found, which is not an error for us.
             # It exits with 2 for actual errors.
             if process.returncode > 1:
@@ -95,5 +95,5 @@ class UgrepStrategy(SearchStrategy):
 
         except FileNotFoundError:
             return {"error": "ugrep (ug) command not found. Please ensure it's installed and in your PATH."}
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             return {"error": f"An unexpected error occurred during search: {str(e)}"}

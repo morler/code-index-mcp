@@ -99,7 +99,7 @@ class StrategyFactory:
         with self._lock:
             if self._initialized:
                 return
-                
+
             try:
                 # Python
                 python_strategy = PythonParsingStrategy()
@@ -140,9 +140,9 @@ class StrategyFactory:
                 rust_strategy = RustParsingStrategy()
                 for ext in rust_strategy.get_supported_extensions():
                     self._strategies[ext] = rust_strategy
-                    
+
                 self._initialized = True
-                
+
             except Exception as e:
                 # Reset state on failure to allow retry
                 self._strategies.clear()
@@ -163,7 +163,7 @@ class StrategyFactory:
             # Ensure initialization is complete
             if not self._initialized:
                 self._initialize_strategies()
-            
+
             # Check for specialized strategies first
             if file_extension in self._strategies:
                 return self._strategies[file_extension]

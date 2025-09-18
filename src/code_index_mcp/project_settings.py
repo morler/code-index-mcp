@@ -6,11 +6,11 @@ for the Code Index MCP server.
 """
 import os
 import json
- 
- 
+
+
 import tempfile
 import hashlib
- 
+
 from datetime import datetime
 
 
@@ -46,7 +46,7 @@ def _get_available_strategies() -> list[SearchStrategy]:
             strategy = strategy_class()
             if strategy.is_available():
                 available.append(strategy)
-        except Exception:
+        except (ImportError, RuntimeError, OSError):
             pass
     return available
 
@@ -95,15 +95,15 @@ class ProjectSettings:
                 os.makedirs(temp_base_dir, exist_ok=True)
             else:
                 pass
-        except Exception:
+        except (OSError, PermissionError):
             # If unable to create temporary directory, use .code_indexer in project directory if available
             if base_path and os.path.exists(base_path):
                 temp_base_dir = os.path.join(base_path, ".code_indexer")
-                
+
             else:
                 # Use home directory as last resort
                 temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-                
+
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
 
@@ -118,7 +118,7 @@ class ProjectSettings:
                 self.settings_path = os.path.join(temp_base_dir, "default")
 
             self.ensure_settings_dir()
-        except Exception:
+        except (OSError, PermissionError, ValueError):
             # If error occurs, use .code_indexer in project or home directory as fallback
             if base_path and os.path.exists(base_path):
                 fallback_dir = os.path.join(base_path, ".code_indexer",
@@ -126,7 +126,7 @@ class ProjectSettings:
             else:
                 fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                           "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest())
-            
+
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
@@ -150,11 +150,11 @@ class ProjectSettings:
                 else:
                     fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                               os.path.basename(self.settings_path))
-                
+
                 self.settings_path = fallback_dir
                 if not os.path.exists(fallback_dir):
                     os.makedirs(fallback_dir, exist_ok=True)
-        except Exception:
+        except (OSError, PermissionError, ValueError, RuntimeError):
             # If unable to create settings directory, use .code_indexer in project or home directory
             if self.base_path and os.path.exists(self.base_path):
                 fallback_dir = os.path.join(self.base_path, ".code_indexer",
@@ -162,7 +162,7 @@ class ProjectSettings:
             else:
                 fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                           "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
-            
+
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
@@ -174,7 +174,7 @@ class ProjectSettings:
             # Ensure directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
             return path
-        except Exception:
+        except (OSError, PermissionError, ValueError, RuntimeError):
             # If error occurs, use file in project or home directory as fallback
             if self.base_path and os.path.exists(self.base_path):
                 return os.path.join(self.base_path, CONFIG_FILE)
@@ -203,9 +203,9 @@ class ProjectSettings:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-            
+
             return config
-        except Exception:
+        except (OSError, PermissionError, ValueError, RuntimeError):
             return config
 
     def load_config(self):
@@ -231,7 +231,7 @@ class ProjectSettings:
             else:
                 pass
             return {}
-        except Exception:
+        except (OSError, PermissionError, ValueError, RuntimeError):
             return {}
 
     def save_index(self, index_data):
@@ -255,7 +255,7 @@ class ProjectSettings:
                     index_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     index_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                
+
 
             # Convert to JSON string if it's an object with to_json method
             if hasattr(index_data, 'to_json'):
@@ -269,15 +269,15 @@ class ProjectSettings:
             with open(index_path, 'w', encoding='utf-8') as f:
                 f.write(json_data)
 
-            
-        except Exception:
+
+        except (OSError, PermissionError, ValueError, RuntimeError):
             # Try saving to project or home directory
             try:
                 if self.base_path and os.path.exists(self.base_path):
                     fallback_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                
+
 
                 # Convert to JSON string if it's an object with to_json method
                 if hasattr(index_data, 'to_json'):
@@ -289,7 +289,7 @@ class ProjectSettings:
 
                 with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(json_data)
-            except Exception:
+            except (OSError, PermissionError, ValueError, RuntimeError):
                 pass
     def load_index(self):
         """Load code index from JSON format
@@ -312,7 +312,7 @@ class ProjectSettings:
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     # If file is corrupted, return None
                     return None
-                except Exception:
+                except (OSError, PermissionError, ValueError, RuntimeError):
                     return None
             else:
                 # Try loading from project or home directory
@@ -325,10 +325,10 @@ class ProjectSettings:
                     with open(fallback_path, 'r', encoding='utf-8') as f:
                         index_data = json.load(f)
                     return index_data
-                except Exception:
+                except (OSError, PermissionError, ValueError, RuntimeError):
                     pass
             return None
-        except Exception:
+        except (OSError, PermissionError, ValueError, RuntimeError):
             return None
 
 
@@ -341,14 +341,14 @@ class ProjectSettings:
                 os.path.join(self.settings_path, "content_cache.pickle"),
                 os.path.join(self.settings_path, INDEX_FILE)  # Legacy JSON
             ]
-            
+
             for legacy_file in legacy_files:
                 if os.path.exists(legacy_file):
                     try:
                         os.remove(legacy_file)
-                    except Exception:
+                    except (OSError, PermissionError, ValueError, RuntimeError):
                         pass
-        except Exception:
+        except (ImportError, RuntimeError, OSError):
             pass
 
     def clear(self):
@@ -368,12 +368,12 @@ class ProjectSettings:
                     try:
                         if os.path.isfile(file_path):
                             os.unlink(file_path)
-                    except Exception:
+                    except (OSError, PermissionError, ValueError, RuntimeError):
                         pass
 
             else:
                 pass
-        except Exception:
+        except (ImportError, RuntimeError, OSError):
             pass
     def get_stats(self):
         """Get statistics for the settings directory
@@ -412,12 +412,12 @@ class ProjectSettings:
                                     'readable': os.access(file_path, os.R_OK),
                                     'writable': os.access(file_path, os.W_OK)
                                 }
-                            except Exception as e:
+                            except (OSError, PermissionError, ValueError, RuntimeError) as e:
                                 stats['files'][filename] = {
                                     'path': file_path,
                                     'error': str(e)
                                 }
-                except Exception as e:
+                except (OSError, PermissionError, ValueError, RuntimeError) as e:
                     stats['list_error'] = str(e)
 
             # Check fallback path
@@ -430,7 +430,7 @@ class ProjectSettings:
             stats['fallback_is_directory'] = os.path.isdir(fallback_dir) if os.path.exists(fallback_dir) else False
 
             return stats
-        except Exception as e:
+        except (OSError, PermissionError, ValueError, RuntimeError) as e:
             return {
                 'error': str(e),
                 'settings_path': self.settings_path,
@@ -464,9 +464,9 @@ class ProjectSettings:
         """
         Force a refresh of the available search tools list.
         """
-        
+
         self.available_strategies = _get_available_strategies()
-        
+
 
     def get_file_watcher_config(self) -> dict:
         """

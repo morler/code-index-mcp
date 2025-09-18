@@ -237,7 +237,7 @@ class SystemManagementService(BaseService):
                 'note': 'Default configuration - project not fully initialized'
             }
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             return {
                 'error': f'Could not load configuration: {e}',
                 'enabled': True,
@@ -255,7 +255,7 @@ class SystemManagementService(BaseService):
             index_service = IndexManagementService(self.ctx)
             return index_service.get_rebuild_status()
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             return {
                 'status': 'unknown',
                 'error': f'Could not get rebuild status: {e}'

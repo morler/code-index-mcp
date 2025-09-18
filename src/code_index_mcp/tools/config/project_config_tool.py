@@ -62,7 +62,7 @@ class ProjectConfigTool:
 
         try:
             return self._settings.load_index()
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             return None
 
     def save_project_config(self, config_data: Dict[str, Any]) -> None:
@@ -111,13 +111,13 @@ class ProjectConfigTool:
         # Check if JSON index exists and is fresh
         from ...indexing import get_index_manager
         index_manager = get_index_manager()
-        
+
         # Set project path if available
         if self._settings.base_path:
             index_manager.set_project_path(self._settings.base_path)
             stats = index_manager.get_index_stats()
             return stats.get('status') == 'loaded'
-        
+
         return False
 
     def cleanup_legacy_files(self) -> None:
@@ -178,7 +178,7 @@ class ProjectConfigTool:
             Default configuration dictionary
         """
         from ...utils import FileFilter
-        
+
         file_filter = FileFilter()
         return {
             "base_path": project_path,
@@ -256,9 +256,9 @@ class ProjectConfigTool:
             Basic directory structure dictionary
         """
         from ...utils import FileFilter
-        
+
         file_filter = FileFilter()
-        
+
         def build_tree(path: str, max_depth: int = 3, current_depth: int = 0) -> Dict[str, Any]:
             """Build directory tree with limited depth using centralized filtering."""
             if current_depth >= max_depth:
@@ -301,7 +301,7 @@ class ProjectConfigTool:
             }
             return structure
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             return {
                 "error": f"Failed to build project structure: {e}",
                 "path": project_path

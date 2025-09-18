@@ -50,18 +50,18 @@ class CodeIntelligenceService(BaseService):
 
         # Use the global index manager
         index_manager = get_index_manager()
-        
+
         # Debug logging
         logger.info(f"Getting file summary for: {file_path}")
         logger.info(f"Index manager state - Project path: {index_manager.project_path}")
         logger.info(f"Index manager state - Has builder: {index_manager.index_builder is not None}")
         if index_manager.index_builder:
             logger.info(f"Index manager state - Has index: {index_manager.index_builder.in_memory_index is not None}")
-        
+
         # Get file summary from JSON index
         summary = index_manager.get_file_summary(file_path)
         logger.info(f"Summary result: {summary is not None}")
-        
+
         if not summary:
             raise ValueError(f"File not found in index: {file_path}")
 
@@ -88,12 +88,7 @@ class CodeIntelligenceService(BaseService):
             # Allow proceeding if auto-initialization might work
             # The index manager will handle project discovery
             logger.info("Project not set in context, relying on index auto-initialization")
-            
+
             # Basic file path validation only
             if not file_path or '..' in file_path:
                 raise ValueError(f"Invalid file path: {file_path}")
-
-
-
-
-

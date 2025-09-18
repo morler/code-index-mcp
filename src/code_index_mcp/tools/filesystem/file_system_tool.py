@@ -106,7 +106,7 @@ class FileSystemTool:
         try:
             content = self.read_file_content(file_path)
             return len(content.splitlines())
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             # If we can't read the file, return 0
             return 0
 
@@ -203,7 +203,7 @@ class FileSystemTool:
 
                 return False
 
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             return False
 
     def get_file_size_category(self, file_path: str) -> str:
@@ -230,5 +230,5 @@ class FileSystemTool:
             else:
                 return 'very_large'
 
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             return 'unknown'

@@ -53,11 +53,11 @@ class FileDiscoveryService(BaseService):
 
         # Get files from JSON index
         files = self._index_manager.find_files(pattern)
-        
+
         # Apply max_results limit if specified
         if max_results and len(files) > max_results:
             files = files[:max_results]
-        
+
         return files
 
     def _validate_discovery_request(self, pattern: str) -> None:

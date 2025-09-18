@@ -30,11 +30,11 @@ class BasicSearchStrategy(SearchStrategy):
         """Check if filename matches the glob pattern."""
         if not pattern:
             return True
-        
+
         # Handle simple cases efficiently
         if pattern.startswith('*') and not any(c in pattern[1:] for c in '*?[]{}'):
             return filename.endswith(pattern[1:])
-        
+
         # Use fnmatch for more complex patterns
         return fnmatch.fnmatch(filename, pattern)
 
@@ -64,9 +64,9 @@ class BasicSearchStrategy(SearchStrategy):
             max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         results: Dict[str, List[Tuple[int, str]]] = {}
-        
+
         flags = 0 if case_sensitive else re.IGNORECASE
-        
+
         try:
             if regex:
                 # Use regex mode - check for safety first
@@ -91,7 +91,7 @@ class BasicSearchStrategy(SearchStrategy):
 
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, base_path)
-                
+
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         for line_num, line in enumerate(f, 1):
@@ -100,7 +100,7 @@ class BasicSearchStrategy(SearchStrategy):
                                 # Truncate content if it exceeds max_line_length
                                 if max_line_length and len(content) > max_line_length:
                                     content = content[:max_line_length] + '... (truncated)'
-                                
+
                                 if rel_path not in results:
                                     results[rel_path] = []
                                 # Strip newline for consistent output
@@ -108,8 +108,8 @@ class BasicSearchStrategy(SearchStrategy):
                 except (UnicodeDecodeError, PermissionError, OSError):
                     # Ignore files that can't be opened or read due to encoding/permission issues
                     continue
-                except Exception:
+                except (OSError, ValueError, RuntimeError):
                     # Ignore any other unexpected exceptions to maintain robustness
                     continue
-        
+
         return results

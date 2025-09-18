@@ -155,7 +155,7 @@ class ContextHelper:
                 self.index_manager.clear_index()
         except AttributeError:
             pass
-    
+
     def update_index_manager(self, index_manager) -> None:
         """
         Update the index manager in the context.

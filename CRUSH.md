@@ -43,3 +43,5 @@
 - Test projects located in `/test/sample-projects/`
 - Each language has a complete user management system
 - Use these projects for integration testing and validation
+
+- **Proactively use CodeIndex tools** for code analysis and search efforts

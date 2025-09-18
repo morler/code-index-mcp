@@ -14,11 +14,11 @@ from ..indexing.qualified_names import generate_qualified_name
 class ResponseFormatter:
     """
     Helper class for formatting responses consistently across services.
-    
+
     This class provides static methods for formatting different types of
     responses in a consistent manner.
     """
-    
+
     @staticmethod
     def _resolve_qualified_names_in_relationships(
         file_path: str,
@@ -28,19 +28,19 @@ class ResponseFormatter:
     ) -> List[str]:
         """
         Convert simple names to qualified names when duplicates exist.
-        
+
         Args:
             file_path: Current file path for context
             relationship_list: List of function/class names that may need qualification
             duplicate_names: Set of names that have duplicates in the project
             index_cache: Optional index cache for duplicate detection
-            
+
         Returns:
             List with qualified names where duplicates exist
         """
         if not relationship_list or not duplicate_names:
             return relationship_list
-        
+
         qualified_list = []
         for name in relationship_list:
             if name in duplicate_names:
@@ -56,39 +56,39 @@ class ResponseFormatter:
             else:
                 # No duplicates, keep original name
                 qualified_list.append(name)
-        
+
         return qualified_list
-    
+
     @staticmethod
     def _get_duplicate_names_from_index(index_cache: Optional[Dict[str, Any]] = None) -> Dict[str, set]:
         """
         Extract duplicate function and class names from index cache.
-        
+
         Args:
             index_cache: Optional index cache
-            
+
         Returns:
             Dictionary with 'functions' and 'classes' sets of duplicate names
         """
         duplicates = {'functions': set(), 'classes': set()}
-        
+
         if not index_cache:
             return duplicates
-        
+
         # Duplicate detection functionality removed - was legacy code
         # Return empty duplicates as this feature is no longer used
-        
+
         return duplicates
-    
+
     @staticmethod
     def success_response(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Format a successful operation response.
-        
+
         Args:
             message: Success message
             data: Optional additional data to include
-            
+
         Returns:
             Formatted success response dictionary
         """
@@ -96,16 +96,16 @@ class ResponseFormatter:
         if data:
             response.update(data)
         return response
-    
+
     @staticmethod
     def error_response(message: str, error_code: Optional[str] = None) -> Dict[str, Any]:
         """
         Format an error response.
-        
+
         Args:
             message: Error message
             error_code: Optional error code for categorization
-            
+
         Returns:
             Formatted error response dictionary
         """
@@ -113,16 +113,16 @@ class ResponseFormatter:
         if error_code:
             response["error_code"] = error_code
         return response
-    
+
     @staticmethod
     def file_list_response(files: List[str], status_message: str) -> Dict[str, Any]:
         """
         Format a file list response for find_files operations.
-        
+
         Args:
             files: List of file paths
             status_message: Status message describing the operation result
-            
+
         Returns:
             Formatted file list response
         """
@@ -130,48 +130,48 @@ class ResponseFormatter:
             "files": files,
             "status": status_message
         }
-    
+
     @staticmethod
     def search_results_response(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Format search results response.
-        
+
         Args:
             results: List of search result dictionaries
-            
+
         Returns:
             Formatted search results response
         """
         return {
             "results": results
         }
-    
+
     @staticmethod
     def config_response(config_data: Dict[str, Any]) -> str:
         """
         Format configuration data as JSON string.
-        
+
         Args:
             config_data: Configuration data dictionary
-            
+
         Returns:
             JSON formatted configuration string
         """
         return json.dumps(config_data, indent=2)
-    
+
     @staticmethod
     def stats_response(stats_data: Dict[str, Any]) -> str:
         """
         Format statistics data as JSON string.
-        
+
         Args:
             stats_data: Statistics data dictionary
-            
+
         Returns:
             JSON formatted statistics string
         """
         return json.dumps(stats_data, indent=2)
-    
+
     @staticmethod
     def file_summary_response(
         file_path: str,
@@ -188,7 +188,7 @@ class ResponseFormatter:
     ) -> Dict[str, Any]:
         """
         Format file summary response from index data.
-        
+
         Args:
             file_path: Path to the file
             line_count: Number of lines in the file
@@ -201,13 +201,13 @@ class ResponseFormatter:
             language_specific: Language-specific analysis data
             error: Error message if analysis failed
             index_cache: Optional index cache for duplicate name resolution
-            
+
         Returns:
             Formatted file summary response
         """
         # Get duplicate names from index for qualified name resolution
         duplicate_names = ResponseFormatter._get_duplicate_names_from_index(index_cache)
-        
+
         # Handle backward compatibility for functions
         processed_functions = []
         if functions:
@@ -218,20 +218,20 @@ class ResponseFormatter:
                 elif isinstance(func, dict):
                     # New format - use complete object and resolve qualified names in relationships
                     processed_func = func.copy()
-                    
+
                     # Resolve qualified names in relationship fields
                     if 'calls' in processed_func and isinstance(processed_func['calls'], list):
                         processed_func['calls'] = ResponseFormatter._resolve_qualified_names_in_relationships(
                             file_path, processed_func['calls'], duplicate_names['functions'], index_cache
                         )
-                    
+
                     if 'called_by' in processed_func and isinstance(processed_func['called_by'], list):
                         processed_func['called_by'] = ResponseFormatter._resolve_qualified_names_in_relationships(
                             file_path, processed_func['called_by'], duplicate_names['functions'], index_cache
                         )
-                    
+
                     processed_functions.append(processed_func)
-        
+
         # Handle backward compatibility for classes
         processed_classes = []
         if classes:
@@ -242,15 +242,15 @@ class ResponseFormatter:
                 elif isinstance(cls, dict):
                     # New format - use complete object and resolve qualified names in relationships
                     processed_cls = cls.copy()
-                    
+
                     # Resolve qualified names in relationship fields
                     if 'instantiated_by' in processed_cls and isinstance(processed_cls['instantiated_by'], list):
                         processed_cls['instantiated_by'] = ResponseFormatter._resolve_qualified_names_in_relationships(
                             file_path, processed_cls['instantiated_by'], duplicate_names['functions'], index_cache
                         )
-                    
+
                     processed_classes.append(processed_cls)
-        
+
         # Handle backward compatibility for imports
         processed_imports = []
         if imports:
@@ -261,7 +261,7 @@ class ResponseFormatter:
                 elif isinstance(imp, dict):
                     # New format - use complete object
                     processed_imports.append(imp)
-        
+
         response = {
             "file_path": file_path,
             "line_count": line_count,
@@ -273,12 +273,12 @@ class ResponseFormatter:
             "imports": processed_imports,
             "language_specific": language_specific or {}
         }
-        
+
         if error:
             response["error"] = error
-        
+
         return response
-    
+
     @staticmethod
     def directory_info_response(
         temp_directory: str,
@@ -290,7 +290,7 @@ class ResponseFormatter:
     ) -> Dict[str, Any]:
         """
         Format directory information response.
-        
+
         Args:
             temp_directory: Path to the directory
             exists: Whether the directory exists
@@ -298,7 +298,7 @@ class ResponseFormatter:
             contents: List of directory contents
             subdirectories: List of subdirectory information
             error: Error message if operation failed
-            
+
         Returns:
             Formatted directory info response
         """
@@ -307,18 +307,18 @@ class ResponseFormatter:
             "exists": exists,
             "is_directory": is_directory
         }
-        
+
         if contents is not None:
             response["contents"] = contents
-        
+
         if subdirectories is not None:
             response["subdirectories"] = subdirectories
-        
+
         if error:
             response["error"] = error
-        
+
         return response
-    
+
     @staticmethod
     def settings_info_response(
         settings_directory: str,
@@ -332,7 +332,7 @@ class ResponseFormatter:
     ) -> Dict[str, Any]:
         """
         Format settings information response.
-        
+
         Args:
             settings_directory: Path to settings directory
             temp_directory: Path to temp directory
@@ -342,7 +342,7 @@ class ResponseFormatter:
             exists: Whether settings directory exists
             status: Status of the configuration
             message: Optional status message
-            
+
         Returns:
             Formatted settings info response
         """
@@ -354,11 +354,11 @@ class ResponseFormatter:
             "stats": stats,
             "exists": exists
         }
-        
+
         if status != "configured":
             response["status"] = status
-        
+
         if message:
             response["message"] = message
-        
+
         return response

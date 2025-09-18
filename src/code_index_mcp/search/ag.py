@@ -52,7 +52,7 @@ class AgStrategy(SearchStrategy):
 
         # Prepare search pattern
         search_pattern = pattern
-        
+
         if regex:
             # Use regex mode - check for safety first
             if not is_safe_regex_pattern(pattern):
@@ -68,7 +68,7 @@ class AgStrategy(SearchStrategy):
         if context_lines > 0:
             cmd.extend(['--before', str(context_lines)])
             cmd.extend(['--after', str(context_lines)])
-            
+
         if file_pattern:
             # Convert glob pattern to regex pattern for ag's -G parameter
             # ag's -G expects regex, not glob patterns
@@ -92,21 +92,21 @@ class AgStrategy(SearchStrategy):
                         regex_pattern = '^' + regex_pattern
                     if not regex_pattern.endswith('$'):
                         regex_pattern = regex_pattern + '$'
-            
+
             cmd.extend(['-G', regex_pattern])
 
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
         cmd.append('.')  # Use current directory since we set cwd=base_path
-        
+
         try:
             # ag exits with 1 if no matches are found, which is not an error.
             # It exits with 0 on success (match found). Other codes are errors.
             process = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
+                cmd,
+                capture_output=True,
+                text=True,
                 encoding='utf-8',
                 errors='replace',
                 check=False,  # Do not raise CalledProcessError on non-zero exit
@@ -119,7 +119,7 @@ class AgStrategy(SearchStrategy):
                  raise RuntimeError(f"ag failed with exit code {process.returncode}: {process.stderr}")
 
             return parse_search_output(process.stdout, base_path, max_line_length)
-        
+
         except FileNotFoundError:
             raise RuntimeError("'ag' (The Silver Searcher) not found. Please install it and ensure it's in your PATH.")
         except Exception as e:

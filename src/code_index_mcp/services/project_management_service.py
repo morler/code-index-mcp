@@ -47,7 +47,7 @@ class ProjectManagementService(BaseService):
         # Import FileWatcherTool locally to avoid circular import
         from ..tools.monitoring import FileWatcherTool
         self._watcher_tool = FileWatcherTool(ctx)
-        
+
 
     @contextmanager
     def _noop_operation(self, *_args, **_kwargs):
@@ -106,7 +106,7 @@ class ProjectManagementService(BaseService):
         """
         # Business step 1: Initialize config tool
         self._config_tool.initialize_settings(path)
-        
+
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
 
@@ -217,7 +217,7 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with loading results
         """
-        
+
 
         # Note: Legacy index loading is now handled by UnifiedIndexManager
         # This method is kept for backward compatibility but functionality moved
@@ -225,7 +225,7 @@ class ProjectManagementService(BaseService):
         # Extract file count from metadata
         file_count = index_data.get('project_metadata', {}).get('total_files', 0)
 
-        
+
 
         return {
             'file_count': file_count,
@@ -243,7 +243,7 @@ class ProjectManagementService(BaseService):
         Returns:
             String describing monitoring setup result
         """
-        
+
 
         try:
             # Create rebuild callback that uses the JSON index manager
@@ -260,7 +260,7 @@ class ProjectManagementService(BaseService):
                     else:
                         logger.warning("File watcher rebuild failed")
                         return False
-                except Exception as e:
+                except (OSError, ValueError, RuntimeError) as e:
                     import traceback
                     logger.error(f"File watcher rebuild failed: {e}")
                     logger.error(f"Traceback: {traceback.format_exc()}")
@@ -278,14 +278,14 @@ class ProjectManagementService(BaseService):
                 self._watcher_tool.record_error("Failed to start file monitoring")
                 return "monitoring_failed"
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             error_msg = f"File monitoring setup failed: {e}"
             self._watcher_tool.record_error(error_msg)
             return "monitoring_error"
 
     def _update_project_state(self, project_path: str, file_count: int) -> None:
         """Business logic to update system state after project initialization."""
-        
+
 
         # Update context with file count
         self.helper.update_file_count(file_count)
@@ -390,7 +390,7 @@ class ProjectManagementService(BaseService):
             # Use config tool to get basic project structure
             basic_structure = self._config_tool.get_basic_project_structure(self.helper.base_path)
             return json.dumps(basic_structure, indent=2)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             error_data = {
                 "error": f"Unable to get project structure: {e}",
                 "status": "error"

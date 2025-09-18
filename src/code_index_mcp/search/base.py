@@ -40,7 +40,7 @@ def parse_search_output(
         try:
             # Try to parse as a matched line first (format: path:linenum:content)
             parts = line.split(':', 2)
-            
+
             # Check if this might be a context line (format: path-linenum-content)
             # Context lines use '-' as separator in grep/ag output
             if len(parts) < 3 and '-' in line:
@@ -67,7 +67,7 @@ def parse_search_output(
             else:
                 # Line doesn't match any expected format
                 continue
-            
+
             line_number = int(line_number_str)
 
             # If the path is already relative (doesn't start with /), keep it as is
@@ -77,7 +77,7 @@ def parse_search_output(
             else:
                 # Path is already relative, use it as is
                 relative_path = file_path_abs
-            
+
             # Normalize path separators for consistency
             relative_path = normalize_file_path(relative_path)
 
@@ -100,19 +100,19 @@ def create_word_boundary_pattern(pattern: str) -> str:
     """
     Create word boundary patterns for partial matching.
     This is NOT true fuzzy search, but allows matching words at boundaries.
-    
+
     Args:
         pattern: Original search pattern
-        
+
     Returns:
         Word boundary pattern for regex matching
     """
     # Escape any regex special characters to make them literal
     escaped = re.escape(pattern)
-    
+
     # Create word boundary pattern that matches:
     # 1. Word at start of word boundary (e.g., "test" in "testing")
-    # 2. Word at end of word boundary (e.g., "test" in "mytest") 
+    # 2. Word at end of word boundary (e.g., "test" in "mytest")
     # 3. Whole word (e.g., "test" as standalone word)
     if len(pattern) >= 3:  # Only for patterns of reasonable length
         # This pattern allows partial matches at word boundaries
@@ -120,32 +120,32 @@ def create_word_boundary_pattern(pattern: str) -> str:
     else:
         # For short patterns, require full word boundaries to avoid too many matches
         boundary_pattern = f"\\b{escaped}\\b"
-    
+
     return boundary_pattern
 
 
 def is_safe_regex_pattern(pattern: str) -> bool:
     """
     Check if a pattern appears to be a safe regex pattern.
-    
+
     Args:
         pattern: The search pattern to check
-        
+
     Returns:
         True if the pattern looks like a safe regex, False otherwise
     """
     # Strong indicators of regex intent
     strong_regex_indicators = ['|', '(', ')', '[', ']', '^', '$']
-    
+
     # Weaker indicators that need context
     weak_regex_indicators = ['.', '*', '+', '?']
-    
+
     # Check for strong regex indicators
     has_strong_regex = any(char in pattern for char in strong_regex_indicators)
-    
+
     # Check for weak indicators with context
     has_weak_regex = any(char in pattern for char in weak_regex_indicators)
-    
+
     # If has strong indicators, likely regex
     if has_strong_regex:
         # Still check for dangerous patterns
@@ -154,10 +154,10 @@ def is_safe_regex_pattern(pattern: str) -> bool:
             r'(.*)*',  # Nested stars
             r'(.{0,})+',  # Potential ReDoS patterns
         ]
-        
+
         has_dangerous_patterns = any(dangerous in pattern for dangerous in dangerous_patterns)
         return not has_dangerous_patterns
-    
+
     # If only weak indicators, need more context
     if has_weak_regex:
         # Patterns like ".*", ".+", "file.*py" look like regex
@@ -169,16 +169,16 @@ def is_safe_regex_pattern(pattern: str) -> bool:
             r'\*\.',  # *.
             r'\w+\.\*\w*',  # word.*word
         ]
-        
+
         return any(re.search(regex_pattern, pattern) for regex_pattern in regex_like_patterns)
-    
+
     return False
 
 
 class SearchStrategy(ABC):
     """
     Abstract base class for a search strategy.
-    
+
     Each strategy is responsible for searching code using a specific tool or method.
     """
 
@@ -192,7 +192,7 @@ class SearchStrategy(ABC):
     def is_available(self) -> bool:
         """
         Check if the search tool for this strategy is available on the system.
-        
+
         Returns:
             True if the tool is available, False otherwise.
         """

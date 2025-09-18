@@ -168,7 +168,7 @@ class FileWatcherService(BaseService):
                 self.logger.error("File watcher failed to start - Observer not alive")
                 return False
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.logger.warning("Failed to start file watcher: %s", e)
             self.logger.info("Falling back to reactive index refresh")
             return False
@@ -218,7 +218,7 @@ class FileWatcherService(BaseService):
 
             self.logger.info("File watcher stopped and cleaned up successfully")
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.logger.error("Error stopping file watcher: %s", e)
 
             # Force cleanup even if there were errors
@@ -258,7 +258,7 @@ class FileWatcherService(BaseService):
             try:
                 self.observer.stop()
                 self.observer.join(timeout=2.0)
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError) as e:
                 self.logger.warning("Error stopping observer during restart: %s", e)
 
         # Start new observer
@@ -275,7 +275,7 @@ class FileWatcherService(BaseService):
             self.logger.info("File watcher restarted successfully")
             return True
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.logger.error("Failed to restart file watcher: %s", e)
             return False
 
@@ -323,7 +323,7 @@ class DebounceEventHandler(FileSystemEventHandler):
             additional_excludes: Additional patterns to exclude
         """
         from ..utils import FileFilter
-        
+
         super().__init__()
         self.debounce_seconds = debounce_seconds
         self.rebuild_callback = rebuild_callback
@@ -378,13 +378,13 @@ class DebounceEventHandler(FileSystemEventHandler):
         try:
             path = Path(target_path)
             should_process = self.file_filter.should_process_path(path, self.base_path)
-            
+
             # Skip temporary files using centralized logic
             if not should_process or self.file_filter.is_temporary_file(path):
                 return False
-                
+
             return True
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             return False
 
 
@@ -410,7 +410,7 @@ class DebounceEventHandler(FileSystemEventHandler):
         if self.rebuild_callback:
             try:
                 result = self.rebuild_callback()
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError) as e:
                 self.logger.error("Rebuild callback failed: %s", e)
                 traceback_msg = traceback.format_exc()
                 self.logger.error("Traceback: %s", traceback_msg)

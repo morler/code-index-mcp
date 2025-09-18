@@ -128,7 +128,7 @@ class BaseService(ABC):
         if self.helper.index_manager:
             return self.helper.index_manager.get_provider()
         return None
-    
+
     @property
     def index_manager(self):
         """

@@ -35,13 +35,13 @@ __all__ = [
     # New Architecture
     'BaseService',
     'ProjectManagementService',
-    'IndexManagementService', 
+    'IndexManagementService',
     'FileDiscoveryService',
     'CodeIntelligenceService',
     'SystemManagementService',
     'SearchService',
     'SettingsService',
-    
+
     # Simple Services
     'FileService',  # Simple file reading for resources
     'FileWatcherService'  # Keep as low-level service

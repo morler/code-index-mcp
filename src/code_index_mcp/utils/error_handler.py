@@ -42,7 +42,7 @@ def handle_mcp_errors(return_type: str = 'str') -> Callable:
         def wrapper(*args, **kwargs) -> Union[str, Dict[str, Any]]:
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
+            except (OSError, ValueError, RuntimeError) as e:
                 error_message = str(e)
 
                 if return_type == 'dict':

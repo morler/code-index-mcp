@@ -32,7 +32,7 @@ class RipgrepStrategy(SearchStrategy):
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using ripgrep.
-        
+
         Args:
             pattern: The search pattern
             base_path: Directory to search in
@@ -50,7 +50,7 @@ class RipgrepStrategy(SearchStrategy):
 
         # Prepare search pattern
         search_pattern = pattern
-        
+
         if regex:
             # Use regex mode - check for safety first
             if not is_safe_regex_pattern(pattern):
@@ -65,7 +65,7 @@ class RipgrepStrategy(SearchStrategy):
 
         if context_lines > 0:
             cmd.extend(['--context', str(context_lines)])
-            
+
         if file_pattern:
             cmd.extend(['--glob', file_pattern])
 
@@ -73,14 +73,14 @@ class RipgrepStrategy(SearchStrategy):
         cmd.append('--')
         cmd.append(search_pattern)
         cmd.append('.')  # Use current directory since we set cwd=base_path
-        
+
         try:
             # ripgrep exits with 1 if no matches are found, which is not an error.
             # It exits with 2 for actual errors.
             process = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
+                cmd,
+                capture_output=True,
+                text=True,
                 encoding='utf-8',
                 errors='replace',
                 check=False,  # Do not raise CalledProcessError on non-zero exit
@@ -90,7 +90,7 @@ class RipgrepStrategy(SearchStrategy):
                 raise RuntimeError(f"ripgrep failed with exit code {process.returncode}: {process.stderr}")
 
             return parse_search_output(process.stdout, base_path, max_line_length)
-        
+
         except FileNotFoundError:
             raise RuntimeError("ripgrep (rg) not found. Please install it and ensure it's in your PATH.")
         except Exception as e:

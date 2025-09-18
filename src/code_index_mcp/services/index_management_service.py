@@ -73,7 +73,7 @@ class IndexManagementService(BaseService):
 
         # Get index stats from the new JSON system
         stats = self._index_manager.get_index_stats()
-        
+
         return {
             'status': 'ready' if stats.get('status') == 'loaded' else 'needs_rebuild',
             'index_available': stats.get('status') == 'loaded',

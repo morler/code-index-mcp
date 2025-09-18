@@ -32,7 +32,7 @@ class JavaParsingStrategy(ParsingStrategy):
         classes = []
         imports = []
         package = None
-        
+
         # Symbol lookup index for O(1) access
         symbol_lookup = {}  # name -> symbol_id mapping
 
@@ -40,13 +40,13 @@ class JavaParsingStrategy(ParsingStrategy):
 
         try:
             tree = parser.parse(content.encode('utf8'))
-            
+
             # Extract package info first
             for node in tree.root_node.children:
                 if node.type == 'package_declaration':
                     package = self._extract_java_package(node, content)
                     break
-            
+
             # Single-pass traversal that handles everything
             context = TraversalContext(
                 content=content,
@@ -57,10 +57,10 @@ class JavaParsingStrategy(ParsingStrategy):
                 imports=imports,
                 symbol_lookup=symbol_lookup
             )
-            
+
             self._traverse_node_single_pass(tree.root_node, context)
-            
-        except Exception as e:
+
+        except (OSError, ValueError, RuntimeError) as e:
             logger.warning(f"Error parsing Java file {file_path}: {e}")
 
         file_info = FileInfo(
@@ -73,11 +73,11 @@ class JavaParsingStrategy(ParsingStrategy):
 
         return symbols, file_info
 
-    def _traverse_node_single_pass(self, node, context: 'TraversalContext', 
+    def _traverse_node_single_pass(self, node, context: 'TraversalContext',
                                   current_class: Optional[str] = None,
                                   current_method: Optional[str] = None):
         """Single-pass traversal that extracts symbols and analyzes calls."""
-        
+
         # Handle class declarations
         if node.type == 'class_declaration':
             name = self._get_java_class_name(node, context.content)
@@ -91,12 +91,12 @@ class JavaParsingStrategy(ParsingStrategy):
                 context.symbols[symbol_id] = symbol_info
                 context.symbol_lookup[name] = symbol_id
                 context.classes.append(name)
-                
+
                 # Traverse class body with updated context
                 for child in node.children:
                     self._traverse_node_single_pass(child, context, current_class=name, current_method=current_method)
                 return
-        
+
         # Handle method declarations
         elif node.type == 'method_declaration':
             name = self._get_java_method_name(node, context.content)
@@ -106,7 +106,7 @@ class JavaParsingStrategy(ParsingStrategy):
                     full_name = f"{current_class}.{name}"
                 else:
                     full_name = name
-                
+
                 symbol_id = self._create_symbol_id(context.file_path, full_name)
                 symbol_info = SymbolInfo(
                     type="method",
@@ -118,13 +118,13 @@ class JavaParsingStrategy(ParsingStrategy):
                 context.symbol_lookup[full_name] = symbol_id
                 context.symbol_lookup[name] = symbol_id  # Also index by method name alone
                 context.functions.append(full_name)
-                
+
                 # Traverse method body with updated context
                 for child in node.children:
-                    self._traverse_node_single_pass(child, context, current_class=current_class, 
+                    self._traverse_node_single_pass(child, context, current_class=current_class,
                                                    current_method=symbol_id)
                 return
-        
+
         # Handle method invocations (calls)
         elif node.type == 'method_invocation':
             if current_method:
@@ -144,7 +144,7 @@ class JavaParsingStrategy(ParsingStrategy):
                                 if current_method not in symbol_info.called_by:
                                     symbol_info.called_by.append(current_method)
                                 break
-        
+
         # Handle import declarations
         elif node.type == 'import_declaration':
             import_text = context.content[node.start_byte:node.end_byte]
@@ -152,10 +152,10 @@ class JavaParsingStrategy(ParsingStrategy):
             import_path = import_text.replace('import', '').replace(';', '').strip()
             if import_path:
                 context.imports.append(import_path)
-        
+
         # Continue traversing children for other node types
         for child in node.children:
-            self._traverse_node_single_pass(child, context, current_class=current_class, 
+            self._traverse_node_single_pass(child, context, current_class=current_class,
                                            current_method=current_method)
 
     def _get_java_class_name(self, node, content: str) -> Optional[str]:
@@ -197,8 +197,8 @@ class JavaParsingStrategy(ParsingStrategy):
 
 class TraversalContext:
     """Context object to pass state during single-pass traversal."""
-    
-    def __init__(self, content: str, file_path: str, symbols: Dict, 
+
+    def __init__(self, content: str, file_path: str, symbols: Dict,
                  functions: List, classes: List, imports: List, symbol_lookup: Dict):
         self.content = content
         self.file_path = file_path

@@ -21,7 +21,7 @@ class FileWatcherTool:
     def __init__(self, ctx):
         self._ctx = ctx
         self._file_watcher_service: Optional[FileWatcherService] = None
-        
+
 
     def create_watcher(self) -> FileWatcherService:
         """
@@ -106,12 +106,12 @@ class FileWatcherTool:
         """Stop any existing file watcher from context."""
         existing_watcher = self.get_from_context()
         if existing_watcher:
-            
+
             existing_watcher.stop_monitoring()
             # Clear reference
             if hasattr(self._ctx.request_context.lifespan_context, '__dict__'):
                 self._ctx.request_context.lifespan_context.file_watcher_service = None
-            
+
 
     def record_error(self, error_message: str) -> None:
         """
@@ -130,5 +130,3 @@ class FileWatcherTool:
         # Store error in context for status reporting
         if hasattr(self._ctx.request_context.lifespan_context, '__dict__'):
             self._ctx.request_context.lifespan_context.file_watcher_error = error_info
-
-        
