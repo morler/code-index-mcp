@@ -26,17 +26,6 @@ class BasicSearchStrategy(SearchStrategy):
         """This basic strategy is always available."""
         return True
 
-    def _matches_pattern(self, filename: str, pattern: str) -> bool:
-        """Check if filename matches the glob pattern."""
-        if not pattern:
-            return True
-
-        # Handle simple cases efficiently
-        if pattern.startswith('*') and not any(c in pattern[1:] for c in '*?[]{}'):
-            return filename.endswith(pattern[1:])
-
-        # Use fnmatch for more complex patterns
-        return fnmatch.fnmatch(filename, pattern)
 
     def search(
         self,
@@ -83,33 +72,35 @@ class BasicSearchStrategy(SearchStrategy):
         except re.error as e:
             raise ValueError(f"Invalid regex pattern: {pattern}, error: {e}")
 
-        for root, _, files in os.walk(base_path):
-            for file in files:
-                # Improved file pattern matching with glob support
-                if file_pattern and not self._matches_pattern(file, file_pattern):
-                    continue
+        # Use centralized file walking with custom pattern matching
+        from ..utils.file_walker import FileWalker
+        from ..utils.file_filter import FileFilter
 
-                file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, base_path)
+        # Create a basic file filter that only excludes directories, not file types
+        basic_filter = FileFilter()
+        walker = FileWalker(basic_filter)
 
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        for line_num, line in enumerate(f, 1):
-                            if search_regex.search(line):
-                                content = line.rstrip('\n')
-                                # Truncate content if it exceeds max_line_length
-                                if max_line_length and len(content) > max_line_length:
-                                    content = content[:max_line_length] + '... (truncated)'
+        for file_path in walker.walk_all_files(base_path, file_pattern):
+            rel_path = os.path.relpath(str(file_path), base_path)
 
-                                if rel_path not in results:
-                                    results[rel_path] = []
-                                # Strip newline for consistent output
-                                results[rel_path].append((line_num, content))
-                except (UnicodeDecodeError, PermissionError, OSError):
-                    # Ignore files that can't be opened or read due to encoding/permission issues
-                    continue
-                except (OSError, ValueError, RuntimeError):
-                    # Ignore any other unexpected exceptions to maintain robustness
-                    continue
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line_num, line in enumerate(f, 1):
+                        if search_regex.search(line):
+                            content = line.rstrip('\n')
+                            # Truncate content if it exceeds max_line_length
+                            if max_line_length and len(content) > max_line_length:
+                                content = content[:max_line_length] + '... (truncated)'
+
+                            if rel_path not in results:
+                                results[rel_path] = []
+                            # Strip newline for consistent output
+                            results[rel_path].append((line_num, content))
+            except (UnicodeDecodeError, PermissionError, OSError):
+                # Ignore files that can't be opened or read due to encoding/permission issues
+                continue
+            except (OSError, ValueError, RuntimeError):
+                # Ignore any other unexpected exceptions to maintain robustness
+                continue
 
         return results

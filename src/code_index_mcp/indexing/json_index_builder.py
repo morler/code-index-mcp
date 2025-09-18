@@ -304,30 +304,21 @@ class JSONIndexBuilder:
 
     def _get_supported_files(self) -> List[str]:
         """
-        Get all supported files in the project using centralized filtering.
+        Get all supported files in the project using centralized walking.
 
         Returns:
             List of file paths that can be parsed
         """
-        supported_files = []
-        base_path = Path(self.project_path)
+        from ..utils.file_walker import FileWalker
 
         try:
-            for root, dirs, files in os.walk(self.project_path):
-                # Filter directories in-place using centralized logic
-                dirs[:] = [d for d in dirs if not self.file_filter.should_exclude_directory(d)]
-
-                # Filter files using centralized logic
-                for file in files:
-                    file_path = Path(root) / file
-                    if self.file_filter.should_process_path(file_path, base_path):
-                        supported_files.append(str(file_path))
-
+            walker = FileWalker(self.file_filter)
+            supported_files = [str(file_path) for file_path in walker.walk_files(self.project_path)]
+            logger.debug(f"Found {len(supported_files)} supported files")
+            return supported_files
         except (OSError, RuntimeError) as e:
             logger.error(f"Error scanning directory {self.project_path}: {e}")
-
-        logger.debug(f"Found {len(supported_files)} supported files")
-        return supported_files
+            return []
 
     def save_index(self, index: Dict[str, Any], index_path: str) -> bool:
         """

@@ -324,16 +324,13 @@ class JSONIndexManager:
             index_mtime = os.path.getmtime(self.index_path)
             base_path = Path(self.project_path)
 
-            # Check if any source files are newer than index
-            for root, dirs, files in os.walk(self.project_path):
-                # Filter directories using centralized logic
-                dirs[:] = [d for d in dirs if not file_filter.should_exclude_directory(d)]
+            # Check if any source files are newer than index using centralized walker
+            from ..utils.file_walker import FileWalker
+            walker = FileWalker(file_filter)
 
-                for file in files:
-                    file_path = Path(root) / file
-                    if file_filter.should_process_path(file_path, base_path):
-                        if os.path.getmtime(str(file_path)) > index_mtime:
-                            return False
+            newer_files = walker.find_newer_files(self.project_path, index_mtime)
+            if newer_files:
+                return False
 
             return True
 
