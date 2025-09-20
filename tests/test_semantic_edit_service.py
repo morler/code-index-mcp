@@ -108,7 +108,7 @@ class TestSemanticEditService:
         # Test identical names
         result = mock_service.rename_symbol("same_name", "same_name")
         assert result["success"] == True
-        assert "identical" in result["message"]
+        assert "identical" in result["error"]
 
     def test_rename_symbol_symbol_not_found(self, mock_service):
         """Test rename_symbol when symbol doesn't exist."""
@@ -339,7 +339,9 @@ class TestSemanticEditService:
         with patch.object(mock_service, '_create_backup_directory', return_value="/backup"):
             backup_path = mock_service._backup_file(test_file)
 
-            assert backup_path == "/backup/test.py"
+            # Use os.path.join for cross-platform compatibility
+            expected_backup = os.path.join("/backup", "test.py")
+            assert backup_path == expected_backup
             mock_copy.assert_called_once()
 
 class TestSemanticEditServiceIntegration:

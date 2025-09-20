@@ -1,0 +1,29 @@
+{
+  "project_path": "D:\\Code\\MyProject\\MCP\\code-index-mcp",
+  "duration_seconds": 1.131,
+  "python_current_bytes": 1564520,
+  "python_peak_bytes": 3090769,
+  "python_current_mib": 1.49,
+  "python_peak_mib": 2.95,
+  "process_rss_bytes": null,
+  "process_rss_mib": null,
+  "index_indexed_files": 164,
+  "index_total_symbols": 1118,
+  "index_languages": [
+    "go",
+    "h",
+    "java",
+    "javascript",
+    "json",
+    "markdown",
+    "objective-c",
+    "python",
+    "rust",
+    "typescript",
+    "xml",
+    "zig"
+  ],
+  "index_index_version": "2.0.0-strategy",
+  "index_timestamp": "2025-09-18T14:43:04Z",
+  "index_status": "loaded"
+}

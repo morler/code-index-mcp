@@ -516,6 +516,130 @@ def rollback_edit_operation(ctx: Context, rollback_info: str) -> Dict[str, Any]:
     """
     return SemanticEditService(ctx).rollback_operation(rollback_info)
 
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def detect_circular_dependencies(ctx: Context, scope: str = "project") -> Dict[str, Any]:
+    """
+    Detect circular dependencies in the project.
+
+    This tool analyzes the project's dependency graph to identify circular dependencies
+    that can cause issues in code organization and compilation.
+
+    Args:
+        scope: Scope of analysis (default: "project")
+
+    Returns:
+        Dictionary containing circular dependency analysis results
+    """
+    return SemanticEditService(ctx).detect_circular_dependencies(scope)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def detect_unused_code(ctx: Context, scope: str = "project") -> Dict[str, Any]:
+    """
+    Detect potentially unused code in the project.
+
+    This tool analyzes the project to find symbols (functions, classes, variables)
+    that are defined but never referenced, helping to identify dead code.
+
+    Args:
+        scope: Scope of analysis (default: "project")
+
+    Returns:
+        Dictionary containing unused code analysis results
+    """
+    return SemanticEditService(ctx).detect_unused_code(scope)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def analyze_impact_scope(ctx: Context, symbol_name: str) -> Dict[str, Any]:
+    """
+    Analyze the impact scope of changing or removing a symbol.
+
+    This tool performs impact analysis to understand how changes to a specific symbol
+    would affect the rest of the codebase, helping with safe refactoring decisions.
+
+    Args:
+        symbol_name: Name of the symbol to analyze
+
+    Returns:
+        Dictionary containing impact analysis results
+    """
+    return SemanticEditService(ctx).analyze_impact_scope(symbol_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def extract_function(
+    ctx: Context,
+    file_path: str,
+    start_line: int,
+    end_line: int,
+    function_name: str,
+    target_file: str = None
+) -> Dict[str, Any]:
+    """
+    Extract code into a new function.
+
+    This tool extracts a block of code from a file and creates a new function,
+    automatically analyzing variable dependencies and generating appropriate
+    function parameters and return values.
+
+    Args:
+        file_path: Path to the source file
+        start_line: Starting line number of code to extract
+        end_line: Ending line number of code to extract
+        function_name: Name for the new function
+        target_file: Target file for the extracted function (optional, defaults to same file)
+
+    Returns:
+        Dictionary containing extraction results
+    """
+    return SemanticEditService(ctx).extract_function(file_path, start_line, end_line, function_name, target_file)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def extract_variable(
+    ctx: Context,
+    file_path: str,
+    line_number: int,
+    expression: str,
+    variable_name: str
+) -> Dict[str, Any]:
+    """
+    Extract an expression into a variable.
+
+    This tool extracts a complex expression from a line of code into a separate
+    variable assignment, improving code readability and enabling reuse.
+
+    Args:
+        file_path: Path to the source file
+        line_number: Line number containing the expression
+        expression: Expression to extract
+        variable_name: Name for the new variable
+
+    Returns:
+        Dictionary containing extraction results
+    """
+    return SemanticEditService(ctx).extract_variable(file_path, line_number, expression, variable_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def inline_function(ctx: Context, function_name: str, scope: str = "project") -> Dict[str, Any]:
+    """
+    Inline a function by replacing all calls with the function body.
+
+    This tool replaces all calls to a function with the actual function body,
+    effectively removing the function definition and inlining its code.
+
+    Args:
+        function_name: Name of the function to inline
+        scope: Scope of inlining (default: "project")
+
+    Returns:
+        Dictionary containing inlining results
+    """
+    return SemanticEditService(ctx).inline_function(function_name, scope)
+
 # ----- PROMPTS -----
 
 @mcp.prompt()
