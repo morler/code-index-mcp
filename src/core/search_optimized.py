@@ -52,7 +52,8 @@ class OptimizedSearchEngine:
         """缓存文件内容 - 避免重复I/O"""
         if file_path not in self._file_cache:
             try:
-                full_path = Path(self.index.base_path) / file_path
+                # Linus原则: IndexBuilder存储的是相对于工作目录的路径，直接使用
+                full_path = Path(file_path)
                 content = full_path.read_text(encoding='utf-8', errors='ignore')
                 self._file_cache[file_path] = content.split('\n')
             except Exception:
