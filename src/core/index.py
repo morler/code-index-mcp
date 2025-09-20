@@ -85,6 +85,12 @@ def get_index() -> CodeIndex:
 def set_project_path(path: str) -> CodeIndex:
     global _global_index
     _global_index = CodeIndex(base_path=path, files={}, symbols={})
+
+    # Linus原则: 一个函数做完整的事情 - 自动构建索引
+    from .builder import IndexBuilder
+    builder = IndexBuilder(_global_index)
+    builder.build_index()
+
     return _global_index
 
 
