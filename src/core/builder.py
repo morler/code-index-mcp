@@ -19,6 +19,7 @@ class IndexBuilder:
         self._parsers = {
             '.py': self._parse_python,
             '.v': self._parse_vlang,
+            '.rs': self._parse_rust,
         }
 
     def build_index(self, root_path: str = None) -> None:
@@ -38,7 +39,7 @@ class IndexBuilder:
             return files
 
         # 扫描所有支持的文件类型
-        for pattern in ['*.py', '*.v']:
+        for pattern in ['*.py', '*.v', '*.rs']:
             for file_path in base.rglob(pattern):
                 if not any(skip in str(file_path) for skip in ['.venv', '__pycache__', '.git']):
                     files.append(str(file_path))
@@ -128,3 +129,98 @@ class IndexBuilder:
 
         except Exception:
             pass
+
+    def _parse_rust(self, file_path: str) -> None:
+        """Rust tree-sitter解析器 - Linus式直接AST操作"""
+        try:
+            import tree_sitter_rust as ts_rust
+            from tree_sitter import Language, Parser
+
+            RUST_LANGUAGE = Language(ts_rust.language())
+            parser = Parser(RUST_LANGUAGE)
+
+            with open(file_path, 'rb') as f:
+                content = f.read()
+
+            tree = parser.parse(content)
+            symbols = {}
+            imports = []
+
+            # 直接遍历AST - 零抽象层
+            def walk_tree(node):
+                if node.type == 'function_item':
+                    func_name = self._extract_rust_name(node, content)
+                    if func_name:
+                        symbols.setdefault('functions', []).append(func_name)
+                elif node.type == 'struct_item':
+                    struct_name = self._extract_rust_name(node, content)
+                    if struct_name:
+                        symbols.setdefault('structs', []).append(struct_name)
+                elif node.type == 'enum_item':
+                    enum_name = self._extract_rust_name(node, content)
+                    if enum_name:
+                        symbols.setdefault('enums', []).append(enum_name)
+                elif node.type == 'trait_item':
+                    trait_name = self._extract_rust_name(node, content)
+                    if trait_name:
+                        symbols.setdefault('traits', []).append(trait_name)
+                elif node.type == 'impl_item':
+                    impl_name = self._extract_rust_impl(node, content)
+                    if impl_name:
+                        symbols.setdefault('impls', []).append(impl_name)
+                elif node.type == 'use_declaration':
+                    use_name = self._extract_rust_use(node, content)
+                    if use_name:
+                        imports.append(use_name)
+
+                # 递归遍历子节点
+                for child in node.children:
+                    walk_tree(child)
+
+            walk_tree(tree.root_node)
+
+            file_info = FileInfo(
+                language="rust",
+                line_count=len(content.decode('utf-8', errors='ignore').splitlines()),
+                symbols=symbols,
+                imports=imports
+            )
+
+            self.index.add_file(file_path, file_info)
+
+        except Exception:
+            pass
+
+    def _extract_rust_name(self, node, content: bytes) -> str:
+        """提取Rust符号名称"""
+        for child in node.children:
+            if child.type == 'identifier':
+                return content[child.start_byte:child.end_byte].decode('utf-8', errors='ignore')
+        return ""
+
+    def _extract_rust_impl(self, node, content: bytes) -> str:
+        """提取impl块信息"""
+        type_name = ""
+        trait_name = ""
+
+        for child in node.children:
+            if child.type == 'type_identifier':
+                type_name = content[child.start_byte:child.end_byte].decode('utf-8', errors='ignore')
+            elif child.type == 'trait_bounds':
+                # 处理 impl Trait for Type
+                for subchild in child.children:
+                    if subchild.type == 'type_identifier':
+                        trait_name = content[subchild.start_byte:subchild.end_byte].decode('utf-8', errors='ignore')
+
+        if trait_name and type_name:
+            return f"{trait_name} for {type_name}"
+        elif type_name:
+            return type_name
+        return ""
+
+    def _extract_rust_use(self, node, content: bytes) -> str:
+        """提取use声明"""
+        for child in node.children:
+            if child.type in ['use_list', 'scoped_identifier', 'identifier']:
+                return content[child.start_byte:child.end_byte].decode('utf-8', errors='ignore')
+        return ""

@@ -58,6 +58,7 @@ dependencies = [
     { name = "tree-sitter" },
     { name = "tree-sitter-java" },
     { name = "tree-sitter-javascript" },
+    { name = "tree-sitter-rust" },
     { name = "tree-sitter-typescript" },
     { name = "tree-sitter-zig" },
     { name = "watchdog" },
@@ -87,6 +88,7 @@ requires-dist = [
     { name = "tree-sitter", specifier = ">=0.20.0" },
     { name = "tree-sitter-java", specifier = ">=0.20.0" },
     { name = "tree-sitter-javascript", specifier = ">=0.20.0" },
+    { name = "tree-sitter-rust", specifier = ">=0.20.0" },
     { name = "tree-sitter-typescript", specifier = ">=0.20.0" },
     { name = "tree-sitter-zig", specifier = ">=0.20.0" },
     { name = "watchdog", specifier = ">=3.0.0" },
@@ -715,6 +717,21 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/77/0a/f980520da86c4eff8392867840a945578ef43372c9d4a37922baa6b121fe/tree_sitter_javascript-0.23.1-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a11ca1c0f736da42967586b568dff8a465ee148a986c15ebdc9382806e0ce871", size = 92927, upload-time = "2024-11-10T05:40:37.92Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ff/5c/36a98d512aa1d1082409d6b7eda5d26b820bd4477a54100ad9f62212bc55/tree_sitter_javascript-0.23.1-cp39-abi3-win_amd64.whl", hash = "sha256:041fa22b34250ea6eb313d33104d5303f79504cb259d374d691e38bbdc49145b", size = 58824, upload-time = "2024-11-10T05:40:39.903Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/dc/79/ceb21988e6de615355a63eebcf806cd2a0fe875bec27b429d58b63e7fb5f/tree_sitter_javascript-0.23.1-cp39-abi3-win_arm64.whl", hash = "sha256:eb28130cd2fb30d702d614cbf61ef44d1c7f6869e7d864a9cc17111e370be8f7", size = 57027, upload-time = "2024-11-10T05:40:40.841Z" },
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8a/ae/fde1ab896f3d79205add86749f6f443537f59c747616a8fc004c7a453c29/tree_sitter_rust-0.24.0.tar.gz", hash = "sha256:c7185f482717bd41f24ffcd90b5ee24e7e0d6334fecce69f1579609994cd599d", size = 335850, upload-time = "2025-04-01T21:06:03.522Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3c/29/0594a6b135d2475d1bb8478029dad127b87856eeb13b23ce55984dd22bb4/tree_sitter_rust-0.24.0-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:7ea455443f5ab245afd8c5ce63a8ae38da455ef27437b459ce3618a9d4ec4f9a", size = 131884, upload-time = "2025-04-01T21:05:56.35Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bf/00/4c400fe94eb3cb141b008b489d582dcd8b41e4168aca5dd8746c47a2b1bc/tree_sitter_rust-0.24.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:a0a1a2694117a0e86e156b28ee7def810ec94e52402069bf805be22d43e3c1a1", size = 137904, upload-time = "2025-04-01T21:05:57.743Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/4d/c5eb85a68a2115d9f5c23fa5590a28873c4cf3b4e17c536ff0cb098e1a91/tree_sitter_rust-0.24.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f3362992ea3150b0dd15577dd59caef4f2926b6e10806f2bb4f2533485acee2f", size = 166554, upload-time = "2025-04-01T21:05:58.965Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ba/72/8ee8cf2bd51bc402531da7d8741838a4ea632b46a8c1e2df9968c7326cc7/tree_sitter_rust-0.24.0-cp39-abi3-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bf2c1f4b87df568352a9e523600af7cb32c5748dc75275f4794d6f811ab13dfe", size = 165457, upload-time = "2025-04-01T21:05:59.939Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/74/d1/389eecb15c3f8ef4c947fcfbcc794ef4036b3b892c0f981e110860371daa/tree_sitter_rust-0.24.0-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:615f989241b717f14105b1bc621ff0c2200c86f1c3b36f1842d61f6605021152", size = 162857, upload-time = "2025-04-01T21:06:00.835Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b9/df/a6321043d6dee313e5fa3b6a13384119d590393368134cf12f2ee7f9e664/tree_sitter_rust-0.24.0-cp39-abi3-win_amd64.whl", hash = "sha256:2e29be0292eaf1f99389b3af4281f92187612af31ba129e90f4755f762993441", size = 130052, upload-time = "2025-04-01T21:06:01.743Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c8/33/70b320d24cd127d6ca427d2bef1279830f0786a1f2cde160f59b4fb80728/tree_sitter_rust-0.24.0-cp39-abi3-win_arm64.whl", hash = "sha256:7a0538eaf4063b443c6cd80a47df19249f65e27dbdf129396a9193749912d0c0", size = 128583, upload-time = "2025-04-01T21:06:02.58Z" },
 ]
 
 [[package]]
