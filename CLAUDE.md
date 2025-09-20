@@ -67,7 +67,9 @@ The project follows **Linus principles** with direct data manipulation:
 src/core/
 ├── index.py          # Unified CodeIndex (200 lines)
 ├── builder.py        # Direct index building (150 lines)
-├── mcp_tools.py      # MCP tool implementations (200 lines)
+├── edit.py           # Semantic editing operations (130 lines) ✨ NEW
+├── mcp_tools.py      # MCP tool implementations (240 lines)
+├── tool_registry.py  # Tool registration (70 lines)
 └── __init__.py       # Simple exports (10 lines)
 ```
 
@@ -125,6 +127,31 @@ def search(self, query: SearchQuery) -> SearchResult:
 - **Single point of truth**: CodeIndex handles everything
 - **No abstractions**: What you see is what you get
 - **Debuggable**: Direct data structure inspection
+
+### 🆕 Semantic Editing Features
+
+#### Linus-Style Code Editing
+- **Direct file operations**: No service wrappers
+- **Atomic editing**: Automatic backup and rollback
+- **Simple implementation**: 130 lines vs 600+ complex service
+
+#### Available Edit Operations
+```python
+# Symbol renaming (cross-file)
+rename_symbol(old_name="old_func", new_name="new_func")
+
+# Smart import adding
+add_import(file_path="src/main.py", import_statement="import os")
+
+# Direct content editing
+apply_edit(file_path="file.py", old_content="...", new_content="...")
+```
+
+#### Safety Mechanisms
+- **Automatic backup**: Every edit creates .bak files
+- **Atomic operations**: All-or-nothing editing
+- **Validation**: Symbol name checking
+- **Rollback support**: Restore from backups
 
 ## Important Implementation Details
 

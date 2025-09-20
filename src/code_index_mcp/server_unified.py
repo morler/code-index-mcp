@@ -42,6 +42,26 @@ def find_files(pattern: str) -> Dict[str, Any]:
     return execute_tool("find_files", pattern=pattern)
 
 
+# ----- 语义编辑工具 - 新增 -----
+
+@mcp.tool()
+def rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
+    """重命名符号 - 跨文件安全重命名"""
+    return execute_tool("rename_symbol", old_name=old_name, new_name=new_name)
+
+
+@mcp.tool()
+def add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
+    """添加导入语句 - 智能插入位置"""
+    return execute_tool("add_import", file_path=file_path, import_statement=import_statement)
+
+
+@mcp.tool()
+def apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
+    """应用编辑操作 - 原子操作和备份"""
+    return execute_tool("apply_edit", file_path=file_path, old_content=old_content, new_content=new_content)
+
+
 def main():
     mcp.run()
 

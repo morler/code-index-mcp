@@ -25,6 +25,9 @@ def _import_tools():
         tool_organize_imports,
         tool_refresh_index,
         tool_check_file_exists,
+        tool_rename_symbol,
+        tool_add_import,
+        tool_apply_edit,
     )
 
     return {
@@ -42,6 +45,9 @@ def _import_tools():
         "organize_imports": tool_organize_imports,
         "refresh_index": tool_refresh_index,
         "check_file_exists": tool_check_file_exists,
+        "rename_symbol": tool_rename_symbol,
+        "add_import": tool_add_import,
+        "apply_edit": tool_apply_edit,
     }
 
 

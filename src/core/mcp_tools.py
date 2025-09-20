@@ -185,4 +185,57 @@ def tool_check_file_exists(file_path: str) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+# ----- 语义编辑工具 - 新增功能 -----
+
+def tool_rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
+    """符号重命名 - 直接编辑操作"""
+    try:
+        from .edit import rename_symbol
+        result = rename_symbol(old_name, new_name)
+
+        return {
+            "success": result.success,
+            "files_changed": result.files_changed,
+            "operations": len(result.operations),
+            "error": result.error
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def tool_add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
+    """添加导入 - 直接文件操作"""
+    try:
+        from .edit import add_import
+        result = add_import(file_path, import_statement)
+
+        return {
+            "success": result.success,
+            "files_changed": result.files_changed,
+            "error": result.error
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
+    """应用编辑 - 原子操作"""
+    try:
+        from .edit import EditOperation, apply_edit
+        operation = EditOperation(
+            file_path=file_path,
+            old_content=old_content,
+            new_content=new_content
+        )
+
+        success = apply_edit(operation)
+        return {
+            "success": success,
+            "backup_path": operation.backup_path,
+            "error": None if success else "Failed to apply edit"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # 工具注册表已移至tool_registry.py以保持文件<200行原则
