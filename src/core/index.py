@@ -60,9 +60,9 @@ class CodeIndex:
     symbols: Dict[str, SymbolInfo]
 
     def search(self, query: SearchQuery) -> SearchResult:
-        """统一搜索入口 - 委托给搜索引擎"""
-        from .search import SearchEngine
-        return SearchEngine(self).search(query)
+        """统一搜索入口 - 委托给优化搜索引擎"""
+        from .search_optimized import OptimizedSearchEngine
+        return OptimizedSearchEngine(self).search(query)
 
     def find_symbol(self, name: str) -> List[Dict[str, Any]]:
         """统一接口，无特殊情况"""
