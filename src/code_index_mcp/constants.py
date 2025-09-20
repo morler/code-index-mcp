@@ -39,6 +39,7 @@ SUPPORTED_EXTENSIONS = [
     '.clj', '.cljs',                  # Clojure
     '.vim',                           # Vim script
     '.zig', '.zon',                   # Zig
+    '.v',                             # V language
 
     # Web and markup
     '.html', '.htm',                  # HTML
