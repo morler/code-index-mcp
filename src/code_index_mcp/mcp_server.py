@@ -1,4 +1,4 @@
-"""Code Index MCP Server - Linus-style minimal implementation."""
+"""Linus-style MCP server."""
 import sys
 import logging
 from contextlib import asynccontextmanager
@@ -46,7 +46,6 @@ def get_project_structure() -> str:
         return f"Project: {ctx.base_path}"
     return "No project configured"
 
-# ----- CORE TOOLS -----
 
 @mcp.tool()
 @handle_mcp_resource_errors
