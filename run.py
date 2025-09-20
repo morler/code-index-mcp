@@ -21,7 +21,7 @@ def _explain_missing_dependency(error: ModuleNotFoundError) -> None:
 
 def main() -> None:
     try:
-        from code_index_mcp.server import main as server_main
+        from code_index_mcp.server_unified import main as server_main
     except ModuleNotFoundError as exc:
         _explain_missing_dependency(exc)
         raise SystemExit(1) from exc
