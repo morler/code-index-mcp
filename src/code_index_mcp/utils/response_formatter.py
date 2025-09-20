@@ -362,3 +362,33 @@ class ResponseFormatter:
             response["message"] = message
 
         return response
+
+    @staticmethod
+    def semantic_search_response(
+        query: str,
+        results: Union[List[Dict[str, Any]], Dict[str, Any]],
+        search_type: str,
+        message: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Format semantic search results response.
+
+        Args:
+            query: The search query that was performed
+            results: Search results (list for most types, dict for hierarchy)
+            search_type: Type of semantic search (references, definition, callers, etc.)
+            message: Optional message about the search
+
+        Returns:
+            Formatted semantic search response
+        """
+        response = {
+            "query": query,
+            "search_type": search_type,
+            "results": results
+        }
+
+        if message:
+            response["message"] = message
+
+        return response

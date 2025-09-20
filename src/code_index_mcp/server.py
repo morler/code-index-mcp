@@ -30,6 +30,7 @@ from .services.project_management_service import ProjectManagementService
 from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
+from .services.semantic_search_service import SemanticSearchService
 from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
 )
@@ -294,6 +295,124 @@ def configure_file_watcher(
 ) -> str:
     """Configure file watcher service settings."""
     return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
+
+# ----- SEMANTIC SEARCH TOOLS -----
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def find_references(symbol_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find all references to a symbol across the project.
+
+    This tool searches for all locations where a symbol (function, class, variable)
+    is referenced or called in the codebase.
+
+    Args:
+        symbol_name: Name of the symbol to find references for
+
+    Returns:
+        Dictionary containing reference locations and metadata
+    """
+    return SemanticSearchService(ctx).find_references(symbol_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def find_definition(symbol_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find the definition of a symbol.
+
+    This tool locates where a symbol (function, class, variable) is defined
+    in the codebase.
+
+    Args:
+        symbol_name: Name of the symbol to find definition for
+
+    Returns:
+        Dictionary containing definition location and metadata
+    """
+    return SemanticSearchService(ctx).find_definition(symbol_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def find_callers(function_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find all symbols that call a specific function.
+
+    This tool identifies all locations in the codebase where a specific
+    function or method is called.
+
+    Args:
+        function_name: Name of the function to find callers for
+
+    Returns:
+        Dictionary containing caller locations and metadata
+    """
+    return SemanticSearchService(ctx).find_callers(function_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def find_implementations(interface_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find all implementations of an interface or base class.
+
+    This tool searches for classes that implement a specific interface
+    or extend a base class (primarily useful for TypeScript and Java).
+
+    Args:
+        interface_name: Name of the interface/base class
+
+    Returns:
+        Dictionary containing implementation locations and metadata
+    """
+    return SemanticSearchService(ctx).find_implementations(interface_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def find_symbol_hierarchy(class_name: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find the inheritance hierarchy of a class.
+
+    This tool analyzes the inheritance relationships of a class,
+    showing parent classes, child classes, and related symbols.
+
+    Args:
+        class_name: Name of the class to analyze
+
+    Returns:
+        Dictionary containing hierarchical structure
+    """
+    return SemanticSearchService(ctx).find_symbol_hierarchy(class_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def semantic_search(query: str, search_type: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Unified semantic search interface.
+
+    This tool provides a single entry point for various semantic search operations,
+    automatically routing to the appropriate specialized search method.
+
+    Args:
+        query: The search query (symbol name, function name, etc.)
+        search_type: Type of search - one of: references, definition, callers, implementations, hierarchy
+
+    Returns:
+        Dictionary containing search results
+    """
+    service = SemanticSearchService(ctx)
+
+    if search_type == "references":
+        return service.find_references(query)
+    elif search_type == "definition":
+        return service.find_definition(query)
+    elif search_type == "callers":
+        return service.find_callers(query)
+    elif search_type == "implementations":
+        return service.find_implementations(query)
+    elif search_type == "hierarchy":
+        return service.find_symbol_hierarchy(query)
+    else:
+        raise ValueError(f"Invalid search_type: {search_type}. Must be one of: references, definition, callers, implementations, hierarchy")
 
 # ----- PROMPTS -----
 
