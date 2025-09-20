@@ -82,6 +82,9 @@ class IndexBuilder:
 
             self.index.add_file(file_path, file_info)
 
+            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+            self._register_symbols(symbols, file_path)
+
         except Exception:
             pass
 
@@ -126,6 +129,9 @@ class IndexBuilder:
             )
 
             self.index.add_file(file_path, file_info)
+
+            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+            self._register_symbols(symbols, file_path)
 
         except Exception:
             pass
@@ -188,8 +194,22 @@ class IndexBuilder:
 
             self.index.add_file(file_path, file_info)
 
+            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+            self._register_symbols(symbols, file_path)
+
         except Exception:
             pass
+
+    def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
+        """将符号注册到全局索引 - Linus原则: 消除重复数据结构"""
+        for symbol_type, symbol_list in symbols.items():
+            for symbol_name in symbol_list:
+                symbol_info = SymbolInfo(
+                    type=symbol_type,
+                    file=file_path,
+                    line=1  # 简化版本，后续可以优化为真实行号
+                )
+                self.index.add_symbol(symbol_name, symbol_info)
 
     def _extract_rust_name(self, node, content: bytes) -> str:
         """提取Rust符号名称"""
