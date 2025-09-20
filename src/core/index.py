@@ -1,8 +1,8 @@
 """
-Core Index - Linus式数据结构 (Phase 1 最终版)
+Core Index - Linus式核心数据结构
 
-严格<200行，按照plans.md要求: 单一数据结构
-"简单是终极的复杂" - Leonardo da Vinci
+精简版本：只包含数据结构和基本操作
+按照plans.md要求拆分为独立模块
 """
 
 from dataclasses import dataclass, field
@@ -53,33 +53,16 @@ class CodeIndex:
     """
     统一数据结构 - 消除所有抽象层
 
-    这是Phase 1的核心：直接操作数据，无包装器
+    核心数据操作，搜索逻辑分离到search.py
     """
     base_path: str
     files: Dict[str, FileInfo]
     symbols: Dict[str, SymbolInfo]
 
     def search(self, query: SearchQuery) -> SearchResult:
-        """直接操作数据，无包装器"""
-        start_time = time.time()
-
-        # 简单分派
-        if query.type == "text":
-            matches = self._search_text(query)
-        elif query.type == "regex":
-            matches = self._search_regex(query)
-        elif query.type == "symbol":
-            matches = self._search_symbol(query)
-        elif query.type == "references":
-            matches = self._find_references(query)
-        elif query.type == "definition":
-            matches = self._find_definition(query)
-        elif query.type == "callers":
-            matches = self._find_callers(query)
-        else:
-            matches = []
-
-        return SearchResult(matches=matches, total_count=len(matches), search_time=time.time() - start_time)
+        """统一搜索入口 - 委托给搜索引擎"""
+        from .search import SearchEngine
+        return SearchEngine(self).search(query)
 
     def find_symbol(self, name: str) -> List[Dict[str, Any]]:
         """统一接口，无特殊情况"""
@@ -110,78 +93,10 @@ class CodeIndex:
         import fnmatch
         return [path for path in self.files.keys() if fnmatch.fnmatch(path, pattern)]
 
-    # 最简搜索实现 - 核心逻辑留给Phase 2扩展
-
-    def _read_file_lines(self, file_path: str) -> List[str]:
-        """读取文件行 - 复用逻辑"""
-        from pathlib import Path
-        try:
-            return (Path(self.base_path) / file_path).read_text(encoding='utf-8', errors='ignore').split('\n')
-        except Exception:
-            return []
-
-    def _search_text(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """文本搜索 - 最简实现"""
-        pattern = query.pattern.lower() if not query.case_sensitive else query.pattern
-        matches = []
-        for file_path, file_info in self.files.items():
-            lines = self._read_file_lines(file_path)
-            for line_num, line in enumerate(lines, 1):
-                search_line = line.lower() if not query.case_sensitive else line
-                if pattern in search_line:
-                    matches.append({"file": file_path, "line": line_num, "content": line.strip(), "language": file_info.language})
-        return matches
-
-    def _search_regex(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """正则搜索 - 最简实现"""
-        import re
-        try:
-            regex = re.compile(query.pattern, 0 if query.case_sensitive else re.IGNORECASE)
-        except re.error:
-            return []
-        matches = []
-        for file_path, file_info in self.files.items():
-            lines = self._read_file_lines(file_path)
-            for line_num, line in enumerate(lines, 1):
-                if regex.search(line):
-                    matches.append({"file": file_path, "line": line_num, "content": line.strip(), "language": file_info.language})
-        return matches
-
-    def _search_symbol(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """符号搜索 - 最简实现"""
-        pattern = query.pattern.lower() if not query.case_sensitive else query.pattern
-        matches = []
-        for symbol_name, symbol_info in self.symbols.items():
-            search_name = symbol_name.lower() if not query.case_sensitive else symbol_name
-            if pattern in search_name:
-                matches.append({"symbol": symbol_name, "type": symbol_info.type, "file": symbol_info.file, "line": symbol_info.line})
-        return matches
-
-    def _find_references(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """查找引用 - 最简实现"""
-        symbol_info = self.symbols.get(query.pattern)
-        return [{"file": ref.split(':')[0], "line": int(ref.split(':')[1]), "type": "reference"}
-                for ref in (symbol_info.references if symbol_info else []) if ':' in ref]
-
-    def _find_definition(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """查找定义 - 最简实现"""
-        symbol_info = self.symbols.get(query.pattern)
-        return [{"file": symbol_info.file, "line": symbol_info.line, "type": "definition"}] if symbol_info else []
-
-    def _find_callers(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """查找调用者 - 最简实现"""
-        symbol_info = self.symbols.get(query.pattern)
-        if not symbol_info:
-            return []
-        matches = []
-        for caller in symbol_info.called_by:
-            caller_info = self.symbols.get(caller)
-            if caller_info:
-                matches.append({"symbol": caller, "file": caller_info.file, "line": caller_info.line, "type": "caller"})
-        return matches
 
 # 全局索引 - Linus式单例
 _global_index: Optional[CodeIndex] = None
+
 
 def get_index() -> CodeIndex:
     """获取全局索引"""
@@ -190,11 +105,13 @@ def get_index() -> CodeIndex:
         raise RuntimeError("Index not initialized")
     return _global_index
 
+
 def set_project_path(path: str) -> CodeIndex:
     """设置项目路径 - 初始化索引"""
     global _global_index
     _global_index = CodeIndex(base_path=path, files={}, symbols={})
     return _global_index
+
 
 def index_exists() -> bool:
     """检查索引是否存在"""

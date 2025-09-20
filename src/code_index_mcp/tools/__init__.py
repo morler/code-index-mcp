@@ -1,19 +1,16 @@
 """
-Tool Layer - Technical components for the Code Index MCP server.
+Tools - Minimal MCP tool collection
 
-This package contains pure technical components that provide specific
-capabilities without business logic. These tools are composed by the
-business layer to achieve business goals.
+Temporarily simplified for Phase 2 completion.
+Only core tools that work with the new CodeIndex.
 """
 
-from .filesystem import FileMatchingTool, FileSystemTool
-from .config import ProjectConfigTool, SettingsTool
-from .monitoring import FileWatcherTool
+# Import only basic working tools for now
+from .simple_tools import *
 
 __all__ = [
-    'FileMatchingTool',
-    'FileSystemTool',
-    'ProjectConfigTool',
-    'SettingsTool',
-    'FileWatcherTool'
+    'set_project_path',
+    'search_code',
+    'find_files',
+    'get_file_summary'
 ]
