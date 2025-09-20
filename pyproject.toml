@@ -36,7 +36,7 @@ Homepage = "https://github.com/johnhuang316/code-index-mcp"
 "Bug Tracker" = "https://github.com/johnhuang316/code-index-mcp/issues"
 
 [project.scripts]
-code-index-mcp = "code_index_mcp.server:main"
+code-index-mcp = "code_index_mcp.server_unified:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
