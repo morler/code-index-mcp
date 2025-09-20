@@ -392,3 +392,62 @@ class ResponseFormatter:
             response["message"] = message
 
         return response
+
+    @staticmethod
+    def edit_operation_response(
+        operation_type: str,
+        success: bool,
+        modified_files: List[str],
+        affected_symbols: Optional[List[str]] = None,
+        error_message: Optional[str] = None,
+        changes_preview: Optional[Dict[str, str]] = None,
+        rollback_info: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Format semantic editing operation response.
+
+        Args:
+            operation_type: Type of edit operation (rename, add_import, etc.)
+            success: Whether the operation succeeded
+            modified_files: List of files that were modified
+            affected_symbols: List of symbols that were affected
+            error_message: Error message if operation failed
+            changes_preview: Preview of changes made (file -> diff)
+            rollback_info: Information needed to rollback the operation
+
+        Returns:
+            Formatted edit operation response
+        """
+        response = {
+            "operation_type": operation_type,
+            "success": success,
+            "modified_files": modified_files,
+            "file_count": len(modified_files)
+        }
+
+        if affected_symbols:
+            response["affected_symbols"] = affected_symbols
+            response["symbol_count"] = len(affected_symbols)
+
+        if error_message:
+            response["error"] = error_message
+
+        if changes_preview:
+            response["changes_preview"] = changes_preview
+
+        if rollback_info:
+            response["rollback_info"] = rollback_info
+
+        # Add summary message
+        if success:
+            if modified_files:
+                summary = f"Successfully {operation_type}: modified {len(modified_files)} file(s)"
+                if affected_symbols:
+                    summary += f", affected {len(affected_symbols)} symbol(s)"
+            else:
+                summary = f"No changes needed for {operation_type} operation"
+            response["message"] = summary
+        else:
+            response["message"] = f"Failed to {operation_type}: {error_message or 'Unknown error'}"
+
+        return response

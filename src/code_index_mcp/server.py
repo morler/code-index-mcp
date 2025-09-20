@@ -31,6 +31,7 @@ from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
 from .services.semantic_search_service import SemanticSearchService
+from .services.semantic_edit_service import SemanticEditService
 from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
 )
@@ -413,6 +414,107 @@ def semantic_search(query: str, search_type: str, ctx: Context) -> Dict[str, Any
         return service.find_symbol_hierarchy(query)
     else:
         raise ValueError(f"Invalid search_type: {search_type}. Must be one of: references, definition, callers, implementations, hierarchy")
+
+# ----- SEMANTIC EDITING TOOLS -----
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def rename_symbol(
+    ctx: Context,
+    old_name: str,
+    new_name: str,
+    scope: str = "project"
+) -> Dict[str, Any]:
+    """
+    Safely rename a symbol across the project.
+
+    This tool performs a semantic rename operation that updates all references
+    to a symbol while maintaining code correctness and consistency.
+
+    Args:
+        old_name: Current name of the symbol to rename
+        new_name: New name for the symbol
+        scope: Scope of rename operation (default: "project")
+
+    Returns:
+        Dictionary containing operation results, modified files, and rollback info
+    """
+    return SemanticEditService(ctx).rename_symbol(old_name, new_name, scope)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def add_import(
+    ctx: Context,
+    file_path: str,
+    module_name: str,
+    symbol_name: str = None
+) -> Dict[str, Any]:
+    """
+    Intelligently add an import statement to a file.
+
+    This tool adds import statements in the appropriate location within the file,
+    following Python import conventions and avoiding duplicates.
+
+    Args:
+        file_path: Path to the file where import should be added
+        module_name: Name of the module to import
+        symbol_name: Specific symbol to import (for 'from X import Y' style)
+
+    Returns:
+        Dictionary containing operation results and preview of changes
+    """
+    return SemanticEditService(ctx).add_import(file_path, module_name, symbol_name)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def remove_unused_imports(ctx: Context, file_path: str) -> Dict[str, Any]:
+    """
+    Remove unused import statements from a file.
+
+    This tool analyzes a file to identify import statements that are not used
+    and safely removes them to clean up the code.
+
+    Args:
+        file_path: Path to the file to clean up
+
+    Returns:
+        Dictionary containing operation results and list of removed imports
+    """
+    return SemanticEditService(ctx).remove_unused_imports(file_path)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def organize_imports(ctx: Context, file_path: str) -> Dict[str, Any]:
+    """
+    Organize and sort import statements in a file.
+
+    This tool reorganizes imports by grouping them into standard library,
+    third-party, and local imports, then sorts each group alphabetically.
+
+    Args:
+        file_path: Path to the file to organize
+
+    Returns:
+        Dictionary containing operation results and preview of changes
+    """
+    return SemanticEditService(ctx).organize_imports(file_path)
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def rollback_edit_operation(ctx: Context, rollback_info: str) -> Dict[str, Any]:
+    """
+    Rollback a previous semantic editing operation.
+
+    This tool restores files to their state before a semantic editing operation
+    using the backup information from the original operation.
+
+    Args:
+        rollback_info: Backup directory path from a previous editing operation
+
+    Returns:
+        Dictionary containing rollback results and list of restored files
+    """
+    return SemanticEditService(ctx).rollback_operation(rollback_info)
 
 # ----- PROMPTS -----
 
