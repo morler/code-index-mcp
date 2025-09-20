@@ -165,6 +165,15 @@ class TypeScriptParsingStrategy(ParsingStrategy):
     def _add_function_call_relationship(self, called_function: str, context: 'TraversalContext',
                                        current_function: str) -> None:
         """Add relationship between caller and called function."""
+        # Get current symbol to add dependency
+        current_symbol_id = current_function
+        if current_symbol_id in context.symbols:
+            current_symbol = context.symbols[current_symbol_id]
+            # Add to dependencies
+            if called_function not in current_symbol.dependencies:
+                current_symbol.dependencies.append(called_function)
+
+        # Find called symbol and update called_by
         if called_function in context.symbol_lookup:
             symbol_id = context.symbol_lookup[called_function]
             symbol_info = context.symbols[symbol_id]
@@ -184,10 +193,70 @@ class TypeScriptParsingStrategy(ParsingStrategy):
         import_text = context.content[node.start_byte:node.end_byte]
         context.imports.append(import_text)
 
+        # Extract imported symbol names
+        imported_names = []
+        for child in node.children:
+            if child.type == 'import_clause':
+                for import_child in child.children:
+                    if import_child.type == 'identifier':
+                        imported_names.append(context.content[import_child.start_byte:import_child.end_byte])
+                    elif import_child.type == 'named_imports':
+                        for spec_child in import_child.children:
+                            if spec_child.type == 'import_specifier':
+                                for spec_grandchild in spec_child.children:
+                                    if spec_grandchild.type == 'identifier':
+                                        imported_names.append(context.content[spec_grandchild.start_byte:spec_grandchild.end_byte])
+
+        # Add to current function's imports if in function context
+        self._add_to_current_symbol_imports(imported_names, context)
+
     def _handle_export_statement(self, node, context: 'TraversalContext') -> None:
         """Handle export statement nodes."""
         export_text = context.content[node.start_byte:node.end_byte]
         context.exports.append(export_text)
+
+        # Extract exported symbol names
+        exported_names = []
+        if node.type == 'export_default_declaration':
+            exported_names.append('default')
+        else:
+            for child in node.children:
+                if child.type == 'identifier':
+                    exported_names.append(context.content[child.start_byte:child.end_byte])
+                elif child.type == 'function_declaration':
+                    name = self._extract_name(child, context.content, 'identifier')
+                    if name:
+                        exported_names.append(name)
+
+        # Add to current function's exports if in function context
+        self._add_to_current_symbol_exports(exported_names, context)
+
+    def _add_to_current_symbol_imports(self, imported_names: List[str], context: 'TraversalContext') -> None:
+        """Add imported names to current symbol's imports field."""
+        if not imported_names:
+            return
+
+        # Find current symbol in the function stack (this is a simplified approach)
+        # In a more complex implementation, we'd need to track the current function context
+        for symbol_id, symbol in context.symbols.items():
+            if symbol.type in ["function", "method"]:
+                for name in imported_names:
+                    if name not in symbol.imports:
+                        symbol.imports.append(name)
+                break  # For now, just add to the first function found
+
+    def _add_to_current_symbol_exports(self, exported_names: List[str], context: 'TraversalContext') -> None:
+        """Add exported names to current symbol's exports field."""
+        if not exported_names:
+            return
+
+        # Find current symbol in the function stack (this is a simplified approach)
+        for symbol_id, symbol in context.symbols.items():
+            if symbol.type in ["function", "method"]:
+                for name in exported_names:
+                    if name not in symbol.exports:
+                        symbol.exports.append(name)
+                break  # For now, just add to the first function found
 
     def _extract_name(self, node, content: str, identifier_type: str) -> Optional[str]:
         """Extract name from tree-sitter node based on identifier type."""
@@ -199,6 +268,10 @@ class TypeScriptParsingStrategy(ParsingStrategy):
     def _get_ts_function_signature(self, node, content: str) -> str:
         """Extract TypeScript function signature."""
         return content[node.start_byte:node.end_byte].split('\n')[0].strip()
+
+    def _create_symbol_id(self, file_path: str, symbol_name: str) -> str:
+        """Create a unique symbol ID."""
+        return f"{file_path}::{symbol_name}"
 
 
 class TraversalContext:

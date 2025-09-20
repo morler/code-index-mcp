@@ -184,14 +184,33 @@ class SinglePassVisitor(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import):
         """Handle import statements."""
         for alias in node.names:
+            imported_name = alias.asname if alias.asname else alias.name
             self.imports.append(alias.name)
+
+            # Add to current symbol's imports if we're in a function/class context
+            if self.current_function_stack:
+                current_symbol_id = self._get_current_symbol_id()
+                if current_symbol_id and current_symbol_id in self.symbols:
+                    symbol = self.symbols[current_symbol_id]
+                    if imported_name not in symbol.imports:
+                        symbol.imports.append(imported_name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
         """Handle from...import statements."""
         if node.module:
             for alias in node.names:
-                self.imports.append(f"{node.module}.{alias.name}")
+                imported_name = alias.asname if alias.asname else alias.name
+                full_import = f"{node.module}.{alias.name}"
+                self.imports.append(full_import)
+
+                # Add to current symbol's imports if we're in a function/class context
+                if self.current_function_stack:
+                    current_symbol_id = self._get_current_symbol_id()
+                    if current_symbol_id and current_symbol_id in self.symbols:
+                        symbol = self.symbols[current_symbol_id]
+                        if imported_name not in symbol.imports:
+                            symbol.imports.append(imported_name)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call):
@@ -214,6 +233,7 @@ class SinglePassVisitor(ast.NodeVisitor):
             if called_function:
                 # Get the current calling function
                 caller_function = self.current_function_stack[-1]
+                current_symbol_id = self._get_current_symbol_id()
 
                 # Use O(1) lookup instead of O(n) iteration
                 # First try exact match
@@ -225,6 +245,12 @@ class SinglePassVisitor(ast.NodeVisitor):
                             symbol_info.called_by = []
                         if caller_function not in symbol_info.called_by:
                             symbol_info.called_by.append(caller_function)
+
+                        # Add to current symbol's dependencies
+                        if current_symbol_id and current_symbol_id in self.symbols:
+                            current_symbol = self.symbols[current_symbol_id]
+                            if called_function not in current_symbol.dependencies:
+                                current_symbol.dependencies.append(called_function)
                 else:
                     # Try method name match for any class
                     for name, symbol_id in self.symbol_lookup.items():
@@ -235,6 +261,12 @@ class SinglePassVisitor(ast.NodeVisitor):
                                     symbol_info.called_by = []
                                 if caller_function not in symbol_info.called_by:
                                     symbol_info.called_by.append(caller_function)
+
+                                # Add to current symbol's dependencies
+                                if current_symbol_id and current_symbol_id in self.symbols:
+                                    current_symbol = self.symbols[current_symbol_id]
+                                    if called_function not in current_symbol.dependencies:
+                                        current_symbol.dependencies.append(called_function)
                                 break
         except (OSError, ValueError, RuntimeError):
             # Silently handle parsing errors for complex call patterns
@@ -246,6 +278,16 @@ class SinglePassVisitor(ast.NodeVisitor):
     def _create_symbol_id(self, file_path: str, symbol_name: str) -> str:
         """Create a unique symbol ID."""
         return f"{file_path}::{symbol_name}"
+
+    def _get_current_symbol_id(self) -> Optional[str]:
+        """Get the symbol ID for the current function/method context."""
+        if not self.current_function_stack:
+            return None
+
+        # Extract symbol name from function stack ID
+        function_id = self.current_function_stack[-1]
+        # function_id format: "file_path::symbol_name"
+        return function_id
 
     def _extract_function_signature(self, node: ast.FunctionDef) -> str:
         """Extract function signature from AST node."""

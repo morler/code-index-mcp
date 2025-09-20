@@ -281,6 +281,178 @@ class JSONIndexManager:
 
             return self.index_builder.get_callers(symbol_name)
 
+    def find_symbol_references(self, symbol_name: str) -> List[Dict[str, Any]]:
+        """Find all references to a symbol."""
+        with self._lock:
+            if not self.index_builder or not self.index_builder.in_memory_index:
+                logger.warning("Index not loaded")
+                return []
+
+            try:
+                results = []
+                for symbol_id, symbol_data in self.index_builder.in_memory_index["symbols"].items():
+                    # Check called_by field
+                    called_by = symbol_data.get("called_by", [])
+                    for caller in called_by:
+                        if symbol_name in caller:
+                            results.append({
+                                "symbol_id": symbol_id,
+                                "type": "called_by",
+                                "caller": caller,
+                                "file": symbol_data.get("file", ""),
+                                "line": symbol_data.get("line", 0)
+                            })
+
+                    # Check references field
+                    references = symbol_data.get("references", [])
+                    for ref in references:
+                        if symbol_name in ref:
+                            results.append({
+                                "symbol_id": symbol_id,
+                                "type": "reference",
+                                "reference": ref,
+                                "file": symbol_data.get("file", ""),
+                                "line": symbol_data.get("line", 0)
+                            })
+
+                return results
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.error(f"Error finding symbol references: {e}")
+                return []
+
+    def find_symbol_dependencies(self, symbol_name: str) -> List[Dict[str, Any]]:
+        """Find what symbols depend on the given symbol."""
+        with self._lock:
+            if not self.index_builder or not self.index_builder.in_memory_index:
+                logger.warning("Index not loaded")
+                return []
+
+            try:
+                results = []
+                for symbol_id, symbol_data in self.index_builder.in_memory_index["symbols"].items():
+                    dependencies = symbol_data.get("dependencies", [])
+                    if symbol_name in dependencies:
+                        results.append({
+                            "symbol_id": symbol_id,
+                            "type": symbol_data.get("type", "unknown"),
+                            "file": symbol_data.get("file", ""),
+                            "line": symbol_data.get("line", 0),
+                            "signature": symbol_data.get("signature", "")
+                        })
+                return results
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.error(f"Error finding symbol dependencies: {e}")
+                return []
+
+    def get_symbol_imports(self, symbol_name: str) -> List[str]:
+        """Get imports for a specific symbol."""
+        with self._lock:
+            if not self.index_builder or not self.index_builder.in_memory_index:
+                return []
+
+            try:
+                for symbol_id, symbol_data in self.index_builder.in_memory_index["symbols"].items():
+                    if symbol_name in symbol_id:
+                        return symbol_data.get("imports", [])
+                return []
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.error(f"Error getting symbol imports: {e}")
+                return []
+
+    def get_symbol_exports(self, symbol_name: str) -> List[str]:
+        """Get exports for a specific symbol."""
+        with self._lock:
+            if not self.index_builder or not self.index_builder.in_memory_index:
+                return []
+
+            try:
+                for symbol_id, symbol_data in self.index_builder.in_memory_index["symbols"].items():
+                    if symbol_name in symbol_id:
+                        return symbol_data.get("exports", [])
+                return []
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.error(f"Error getting symbol exports: {e}")
+                return []
+
+    def build_symbol_relationship_graph(self) -> Dict[str, Any]:
+        """Build a comprehensive symbol relationship graph."""
+        with self._lock:
+            if not self.index_builder or not self.index_builder.in_memory_index:
+                logger.warning("Index not loaded")
+                return {}
+
+            try:
+                graph = {
+                    "nodes": [],
+                    "edges": [],
+                    "metadata": {
+                        "total_symbols": 0,
+                        "total_relationships": 0,
+                        "symbol_types": {}
+                    }
+                }
+
+                symbols = self.index_builder.in_memory_index["symbols"]
+
+                # Build nodes
+                for symbol_id, symbol_data in symbols.items():
+                    symbol_type = symbol_data.get("type", "unknown")
+
+                    graph["nodes"].append({
+                        "id": symbol_id,
+                        "name": symbol_id.split("::")[-1],  # Extract name from ID
+                        "type": symbol_type,
+                        "file": symbol_data.get("file", ""),
+                        "line": symbol_data.get("line", 0),
+                        "signature": symbol_data.get("signature", "")
+                    })
+
+                    # Count symbol types
+                    graph["metadata"]["symbol_types"][symbol_type] = graph["metadata"]["symbol_types"].get(symbol_type, 0) + 1
+
+                # Build edges (relationships)
+                edge_count = 0
+                for symbol_id, symbol_data in symbols.items():
+                    # Called_by relationships
+                    called_by = symbol_data.get("called_by", [])
+                    for caller in called_by:
+                        graph["edges"].append({
+                            "source": caller,
+                            "target": symbol_id,
+                            "type": "calls",
+                            "weight": 1
+                        })
+                        edge_count += 1
+
+                    # Dependency relationships
+                    dependencies = symbol_data.get("dependencies", [])
+                    for dep in dependencies:
+                        # Find the dependency symbol ID
+                        dep_symbol_id = None
+                        for sid, sdata in symbols.items():
+                            if dep in sid:
+                                dep_symbol_id = sid
+                                break
+
+                        if dep_symbol_id:
+                            graph["edges"].append({
+                                "source": symbol_id,
+                                "target": dep_symbol_id,
+                                "type": "depends_on",
+                                "weight": 1
+                            })
+                            edge_count += 1
+
+                graph["metadata"]["total_symbols"] = len(graph["nodes"])
+                graph["metadata"]["total_relationships"] = edge_count
+
+                logger.info(f"Built symbol relationship graph with {len(graph['nodes'])} nodes and {edge_count} edges")
+                return graph
+
+            except (OSError, ValueError, RuntimeError) as e:
+                logger.error(f"Error building symbol relationship graph: {e}")
+                return {}
+
     def get_index_stats(self) -> Dict[str, Any]:
         """Get statistics about the current index."""
         with self._lock:
