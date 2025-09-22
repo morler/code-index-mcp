@@ -176,6 +176,51 @@ def tool_check_file_exists(file_path: str) -> Dict[str, Any]:
     }
 
 
+# ----- 文件内容读取工具 - Linus式直接访问 -----
+
+@handle_mcp_errors
+def tool_get_file_content(file_path: str, start_line: int = None, end_line: int = None) -> Dict[str, Any]:
+    """获取文件内容 - 直接操作，零抽象，支持全文件和片段"""
+    index = get_index()
+
+    # 直接文件操作
+    full_path = Path(index.base_path) / file_path if index.base_path else Path(file_path)
+    if not full_path.exists():
+        return {"success": False, "error": f"File not found: {file_path}"}
+
+    try:
+        # 复用SearchEngine的文件读取逻辑
+        lines = full_path.read_text(encoding='utf-8', errors='ignore').split('\n')
+
+        # 处理片段请求 - 消除特殊情况
+        if start_line is not None:
+            start_idx = max(0, start_line - 1)
+            end_idx = len(lines) if end_line is None else min(len(lines), end_line)
+            content_lines = lines[start_idx:end_idx]
+            line_numbers = list(range(start_line, start_line + len(content_lines)))
+        else:
+            content_lines = lines
+            line_numbers = list(range(1, len(lines) + 1))
+
+        # 获取文件元信息（如果已索引）
+        file_info = index.get_file(file_path)
+        language = file_info.language if file_info else "unknown"
+
+        return {
+            "success": True,
+            "file_path": file_path,
+            "content": content_lines,
+            "line_numbers": line_numbers,
+            "total_lines": len(lines),
+            "language": language,
+            "encoding": "utf-8",
+            "start_line": start_line or 1,
+            "end_line": end_line or len(lines)
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Failed to read file: {str(e)}"}
+
+
 # ----- 语义编辑工具 - 新增功能 -----
 
 @handle_mcp_errors

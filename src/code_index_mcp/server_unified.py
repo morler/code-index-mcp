@@ -42,6 +42,12 @@ def find_files(pattern: str) -> Dict[str, Any]:
     return execute_tool("find_files", pattern=pattern)
 
 
+@mcp.tool()
+def get_file_content(file_path: str, start_line: int = None, end_line: int = None) -> Dict[str, Any]:
+    """获取文件内容 - 支持全文件和特定行范围"""
+    return execute_tool("get_file_content", file_path=file_path, start_line=start_line, end_line=end_line)
+
+
 # ----- 语义编辑工具 - 新增 -----
 
 @mcp.tool()
