@@ -91,6 +91,66 @@ def get_file_extension(file_path: str) -> str:
     """获取标准化文件扩展名"""
     return Path(file_path).suffix.lower()
 
+# Linus原则: Rust风格语言映射表 - 直接查表，零if/elif分支
+LANGUAGE_MAP = {
+    # Core programming languages
+    '.py': 'python',
+    '.pyw': 'python', 
+    '.js': 'javascript',
+    '.jsx': 'javascript',
+    '.ts': 'typescript',
+    '.tsx': 'typescript',
+    '.mjs': 'javascript',
+    '.cjs': 'javascript',
+    '.java': 'java',
+    '.go': 'go',
+    '.rs': 'rust',
+    '.zig': 'zig',
+    '.c': 'c',
+    '.h': 'c',
+    '.cpp': 'cpp',
+    '.hpp': 'cpp',
+    '.cc': 'cpp',
+    '.cxx': 'cpp',
+    '.cs': 'csharp',
+    '.php': 'php',
+    '.rb': 'ruby',
+    '.v': 'vlang',
+    '.swift': 'swift',
+    '.kt': 'kotlin',
+    '.scala': 'scala',
+    '.dart': 'dart',
+    '.lua': 'lua',
+    '.pl': 'perl',
+    '.sh': 'bash',
+    '.ps1': 'powershell',
+    '.r': 'r',
+    '.jl': 'julia',
+    '.m': 'objective-c',
+    '.mm': 'objective-cpp',
+    '.f90': 'fortran',
+    '.f95': 'fortran',
+    '.hs': 'haskell',
+    '.ml': 'ocaml',
+    '.fs': 'fsharp',
+    '.ex': 'elixir',
+    '.exs': 'elixir',
+    '.erl': 'erlang',
+    '.clj': 'clojure',
+    '.lisp': 'lisp',
+    '.scm': 'scheme',
+}
+
+
+def detect_language(file_path: str) -> str:
+    """
+    Rust风格语言检测 - 直接查表，零分支
+    
+    Linus原则: 消除if/elif链，用操作注册表
+    """
+    suffix = Path(file_path).suffix.lower()
+    return LANGUAGE_MAP.get(suffix, 'unknown')
+
 class IndexBuilder:
     """极简索引构建器 - 零抽象层"""
 
@@ -146,17 +206,22 @@ class IndexBuilder:
             self._index_file(file_path)
 
     def _scan_files(self) -> List[str]:
-        """扫描支持的代码文件"""
+        """扫描支持的代码文件 - Rust风格，基于语言映射表"""
         files = []
         base = Path(self.index.base_path)
 
         if not base.exists():
             return files
 
-        # 扫描所有支持的文件类型
-        for pattern in ['*.py', '*.v', '*.rs']:
+        # Linus原则: 基于语言映射表动态生成文件模式 - 零硬编码
+        supported_extensions = list(LANGUAGE_MAP.keys())
+        
+        # 扫描所有已知的文件扩展名
+        for ext in supported_extensions:
+            pattern = f"*{ext}"
             for file_path in base.rglob(pattern):
-                if not any(skip in str(file_path) for skip in ['.venv', '__pycache__', '.git']):
+                # 跳过常见的非源码目录
+                if not any(skip in str(file_path) for skip in ['.venv', '__pycache__', '.git', 'node_modules', 'target', 'build']):
                     files.append(str(file_path))
         return files
 
@@ -181,7 +246,7 @@ class IndexBuilder:
             self._process_ast_node(node, symbols, imports)
 
         file_info = FileInfo(
-            language="python",
+            language=detect_language(file_path),
             line_count=len(content.splitlines()),
             symbols=symbols,
             imports=imports
@@ -226,7 +291,7 @@ class IndexBuilder:
             imports.append(match.group(1))
 
         file_info = FileInfo(
-            language="vlang",
+            language=detect_language(file_path),
             line_count=len(content.splitlines()),
             symbols=symbols,
             imports=imports
@@ -300,7 +365,7 @@ class IndexBuilder:
         walk_tree(tree.root_node)
 
         file_info = FileInfo(
-            language="rust",
+            language=detect_language(file_path),
             line_count=len(content.decode('utf-8', errors='ignore').splitlines()),
             symbols=symbols,
             imports=imports
