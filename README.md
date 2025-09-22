@@ -5,10 +5,11 @@
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-2.3.2-blue)](#)
 
-**Intelligent code indexing and analysis for Large Language Models**
+**Linus-style intelligent code indexing with SCIP protocol support**
 
-Transform how AI understands your codebase with advanced search, analysis, and navigation capabilities.
+Direct data manipulation, zero abstractions, maximum performance for AI code analysis.
 
 </div>
 
@@ -18,9 +19,15 @@ Transform how AI understands your codebase with advanced search, analysis, and n
 
 ## Overview
 
-Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that bridges the gap between AI models and complex codebases. It provides intelligent indexing, advanced search capabilities, and detailed code analysis to help AI assistants understand and navigate your projects effectively.
+Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server implementing **Linus Torvalds' design philosophy**: direct data manipulation, elimination of special cases, and zero unnecessary abstractions. Built with SCIP protocol support for semantic code analysis.
 
-**Perfect for:** Code review, refactoring, documentation generation, debugging assistance, and architectural analysis.
+**Architecture Principles:**
+- **"Good Taste"**: Unified interfaces eliminate if/else chains
+- **"Never Break Userspace"**: Backward-compatible MCP tools
+- **"Pragmatism First"**: Solve real problems, not theoretical ones
+- **"Simplicity Obsession"**: <200 lines per file, <3 indentation levels
+
+**Perfect for:** Semantic code analysis, cross-file symbol tracking, intelligent refactoring, and architectural understanding.
 
 ## Quick Start
 
@@ -47,48 +54,47 @@ The easiest way to get started with any MCP-compatible application:
 3. **Start using** (give these prompts to your AI assistant):
    ```
    Set the project path to /Users/dev/my-react-app
-   Find all TypeScript files in this project  
+   Find all TypeScript files in this project
    Search for "authentication" functions
    Analyze the main App.tsx file
    ```
 
 ## Typical Use Cases
 
-**Code Review**: "Find all places using the old API"  
-**Refactoring Help**: "Where is this function called?"  
-**Learning Projects**: "Show me the main components of this React project"  
+**Code Review**: "Find all places using the old API"
+**Refactoring Help**: "Where is this function called?"
+**Learning Projects**: "Show me the main components of this React project"
 **Debugging**: "Search for all error handling related code"
 
 ## Key Features
 
-### 🔍 **Intelligent Search & Analysis**
-- **Dual-Strategy Architecture**: Specialized tree-sitter parsing for 7 core languages, fallback strategy for 50+ file types
-- **Direct Tree-sitter Integration**: No regex fallbacks for specialized languages - fail fast with clear errors
-- **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
-- **Universal File Support**: Comprehensive coverage from advanced AST parsing to basic file indexing
-- **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics
+### 🏗️ **Linus-style Unified Architecture**
+- **Single CodeIndex**: Direct data structure handles ALL operations
+- **Zero Abstractions**: No service wrappers, no delegation patterns
+- **Operation Registry**: Eliminates if/else chains through function dispatch
+- **Atomic Operations**: Edit/search/index operations with automatic rollback
+- **Direct Tool Access**: `unified_tool()` handles 30+ specialized functions
 
-### 🗂️ **Multi-Language Support**  
-- **7 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Go, Objective-C, Zig
-- **50+ File Types with Fallback Strategy**: C/C++, Rust, Ruby, PHP, and all other programming languages
-- **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
-- **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
-- **Database**: SQL variants, NoSQL, stored procedures, migrations
-- **Configuration**: JSON, YAML, XML, Markdown
-- **[View complete list](#supported-file-types)**
+### 🔬 **SCIP Protocol Integration**
+- **Semantic Symbol IDs**: Industry-standard symbol identification
+- **Cross-file References**: Track symbol usage across entire codebase
+- **Definition/Reference Tracking**: Precise navigation between symbols
+- **Symbol Hierarchy**: Complete inheritance and dependency graphs
+- **Export Compatibility**: Generate SCIP indexes for external tools
 
-### ⚡ **Real-time Monitoring & Auto-refresh**
-- **File Watcher**: Automatic index updates when files change
-- **Cross-platform**: Native OS file system monitoring
-- **Smart Processing**: Batches rapid changes to prevent excessive rebuilds
-- **Rich Metadata**: Captures symbols, references, definitions, and relationships
+### 🌳 **Multi-Language Tree-sitter Parsing**
+- **7 Core Languages**: Python, JavaScript, TypeScript, Java, Go, Zig, Objective-C
+- **Direct AST Access**: No regex fallbacks - fail fast with clear errors
+- **Symbol Extraction**: Functions, classes, methods, variables, imports
+- **Signature Capture**: Complete method signatures and type information
+- **Call Relationship Tracking**: Who calls whom, cross-file analysis
 
-### ⚡ **Performance & Efficiency**
-- **Tree-sitter AST Parsing**: Native syntax parsing for accurate symbol extraction
-- **Persistent Caching**: Stores indexes for lightning-fast subsequent access
-- **Smart Filtering**: Intelligent exclusion of build directories and temporary files
-- **Memory Efficient**: Optimized for large codebases
-- **Direct Dependencies**: No fallback mechanisms - fail fast with clear error messages
+### ⚡ **Performance Optimizations**
+- **Incremental Updates**: Only reprocess changed files
+- **LRU Caching**: File content and regex compilation caching
+- **Memory Management**: Automatic cleanup at 80% threshold
+- **Hash-based Change Detection**: xxhash for rapid file comparison
+- **Optimized Data Structures**: Direct dictionary access, zero copying
 
 ## Supported File Types
 
@@ -216,33 +222,47 @@ Then configure:
 
 ## Available Tools
 
-### 🏗️ **Project Management**
+### 🏗️ **Core Project Management**
 | Tool | Description |
 |------|-------------|
-| **`set_project_path`** | Initialize indexing for a project directory |
-| **`refresh_index`** | Rebuild the project index after file changes |
-| **`get_settings_info`** | View current project configuration and status |
+| **`set_project_path`** | Initialize Linus-style direct indexing for project |
+| **`get_index_stats`** | View indexed files, symbols, and performance metrics |
+| **`update_incrementally`** | Smart incremental updates (Linus principle: only changed files) |
+| **`full_rebuild_index`** | Force complete rebuild when needed |
 
-### 🔍 **Search & Discovery**
+### 🔍 **Unified Search Interface**
 | Tool | Description |
 |------|-------------|
-| **`search_code_advanced`** | Smart search with regex, fuzzy matching, and file filtering |
-| **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
-| **`get_file_summary`** | Analyze file structure, functions, imports, and complexity |
+| **`search_code`** | Unified search: text, regex, symbol types through single interface |
+| **`find_files`** | Glob pattern file discovery (e.g., `**/*.py`) |
+| **`semantic_search`** | SCIP-powered semantic symbol search |
+| **`find_references`** | Cross-file symbol reference tracking |
+| **`find_definition`** | Navigate to symbol definitions |
+| **`find_callers`** | Who calls this function/method |
 
-### 🔄 **Monitoring & Auto-refresh**
+### 📁 **File & Symbol Analysis**
 | Tool | Description |
 |------|-------------|
-| **`get_file_watcher_status`** | Check file watcher status and configuration |
-| **`configure_file_watcher`** | Enable/disable auto-refresh and configure settings |
+| **`get_file_content`** | Direct file access with line range support |
+| **`get_file_summary`** | Tree-sitter parsed structure: functions, classes, imports |
+| **`get_symbol_body`** | Extract complete syntax bodies (auto-detects boundaries) |
+| **`get_changed_files`** | List files modified since last index |
 
-### 🛠️ **System & Maintenance**
+### ✏️ **Semantic Editing (NEW)**
 | Tool | Description |
 |------|-------------|
-| **`create_temp_directory`** | Set up storage directory for index data |
-| **`check_temp_directory`** | Verify index storage location and permissions |
-| **`clear_settings`** | Reset all cached data and configurations |
-| **`refresh_search_tools`** | Re-detect available search tools (ugrep, ripgrep, etc.) |
+| **`rename_symbol`** | Cross-file safe symbol renaming with backup |
+| **`add_import`** | Smart import insertion at correct file locations |
+| **`apply_edit`** | Atomic content editing with automatic rollback |
+
+### 🔬 **SCIP Protocol Tools**
+| Tool | Description |
+|------|-------------|
+| **`generate_scip_symbol_id`** | Create industry-standard symbol identifiers |
+| **`find_scip_symbol`** | SCIP-based symbol search with overload support |
+| **`get_cross_references`** | Complete cross-file usage analysis |
+| **`get_symbol_graph`** | Full dependency and relationship graphs |
+| **`export_scip_index`** | Generate standard SCIP format for external tools |
 
 ## Usage Examples
 
@@ -269,63 +289,83 @@ Give me a summary of src/api/userService.ts
 ### 🔍 **Advanced Search Examples**
 
 <details>
-<summary><strong>Code Pattern Search</strong></summary>
+<summary><strong>Unified Search Interface</strong></summary>
 
 ```
-Search for all function calls matching "get.*Data" using regex
+Search for "get.*Data" using regex pattern
 ```
-*Finds: `getData()`, `getUserData()`, `getFormData()`, etc.*
+*Uses: `search_code` with `search_type="regex"` - finds getData(), getUserData(), etc.*
 
 </details>
 
 <details>
-<summary><strong>Fuzzy Function Search</strong></summary>
+<summary><strong>SCIP Semantic Search</strong></summary>
 
 ```
-Find authentication-related functions with fuzzy search for 'authUser'
+Find all references to the authenticateUser function
 ```
-*Matches: `authenticateUser`, `authUserToken`, `userAuthCheck`, etc.*
+*Uses: `find_references` - tracks cross-file usage with SCIP protocol*
 
 </details>
 
 <details>
-<summary><strong>Language-Specific Search</strong></summary>
+<summary><strong>Symbol Navigation</strong></summary>
 
 ```
-Search for "API_ENDPOINT" only in Python files
+Show me who calls the validateInput method
 ```
-*Uses: `search_code_advanced` with `file_pattern: "*.py"`*
+*Uses: `find_callers` - complete call graph analysis*
 
 </details>
 
 <details>
-<summary><strong>Auto-refresh Configuration</strong></summary>
+<summary><strong>Smart Symbol Editing</strong></summary>
 
 ```
-Configure automatic index updates when files change
+Rename function getUserById to fetchUserById across all files
 ```
-*Uses: `configure_file_watcher` to enable/disable monitoring and set debounce timing*
+*Uses: `rename_symbol` - safe cross-file renaming with automatic backup*
 
 </details>
 
 <details>
-<summary><strong>Project Maintenance</strong></summary>
+<summary><strong>Incremental Updates</strong></summary>
 
 ```
-I added new components, please refresh the project index
+Update the index to include my recent file changes
 ```
-*Uses: `refresh_index` to update the searchable cache*
+*Uses: `update_incrementally` - Linus principle: only process changed files*
+
+</details>
+
+<details>
+<summary><strong>Complete Symbol Analysis</strong></summary>
+
+```
+Get the full implementation of the DatabaseManager class
+```
+*Uses: `get_symbol_body` - extracts complete syntax with auto-detected boundaries*
 
 </details>
 
 ## Troubleshooting
 
-### 🔄 **Auto-refresh Not Working**
+### 🏗️ **Index Issues**
 
-If automatic index updates aren't working when files change, try:
-- `pip install watchdog` (may resolve environment isolation issues)
-- Use manual refresh: Call the `refresh_index` tool after making file changes
-- Check file watcher status: Use `get_file_watcher_status` to verify monitoring is active
+**Files not appearing in search:**
+- Use `update_incrementally` to refresh changed files
+- Check `get_index_stats` to verify project path is set
+- Try `full_rebuild_index` for complete refresh
+
+**Symbol search not working:**
+- Verify tree-sitter parser availability for your language
+- Use `get_file_summary` to check if symbols were extracted
+- Tree-sitter supports: Python, JS, TS, Java, Go, Zig, Objective-C
+
+**Performance issues:**
+- Check `get_changed_files` to see incremental update scope
+- Large projects: Use file patterns to search specific directories
+- Memory usage: System automatically cleans cache at 80% threshold
 
 ## Development & Contributing
 
@@ -351,5 +391,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 [MIT License](LICENSE)
 
 ### 🌐 **Translations**
-- [繁體中文](README_zh.md)
-- [日本語](README_ja.md)
+- [简体中文](README_CN.md)
