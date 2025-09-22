@@ -8,6 +8,7 @@ MCP Tools - Linus式统一工具实现
 from typing import Dict, Any, List, Optional
 import time
 import os
+import errno
 from pathlib import Path
 
 from .index import get_index, set_project_path as core_set_project_path, SearchQuery
@@ -15,6 +16,37 @@ from .builder import handle_mcp_errors
 
 # 向后兼容 - 导出execute_tool
 from .tool_registry import execute_tool
+
+
+def _create_error_response(error: Exception, context: str = "") -> Dict[str, Any]:
+    """创建具体化的错误响应 - Linus风格：直接说明问题"""
+    if isinstance(error, FileNotFoundError):
+        return {"success": False, "error": f"File not found: {error.filename}"}
+    elif isinstance(error, PermissionError):
+        return {"success": False, "error": f"Permission denied: {error.filename}"}
+    elif isinstance(error, OSError) and error.errno == errno.ENOENT:
+        return {"success": False, "error": f"Directory does not exist: {error.filename}"}
+    elif isinstance(error, OSError) and error.errno == errno.EACCES:
+        return {"success": False, "error": f"Access denied: {error.filename}"}
+    elif isinstance(error, UnicodeDecodeError):
+        return {"success": False, "error": f"File encoding error: cannot decode {error.object}"}
+    elif isinstance(error, ValueError):
+        return {"success": False, "error": f"Invalid value: {str(error)}"}
+    else:
+        error_msg = f"{context}: {str(error)}" if context else str(error)
+        return {"success": False, "error": error_msg}
+
+
+def _resolve_file_path(base_path: Optional[str], file_path: str) -> Path:
+    """统一路径解析 - Linus风格：消除重复的Path处理逻辑"""
+    if not base_path:
+        return Path(file_path)
+
+    base = Path(base_path)
+    file_p = Path(file_path)
+
+    # 绝对路径直接返回，相对路径相对于base_path
+    return file_p if file_p.is_absolute() else base / file_path
 
 
 # ----- 核心工具 - 直接数据操作 -----
@@ -184,7 +216,7 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
     index = get_index()
 
     # 直接文件操作
-    full_path = Path(index.base_path) / file_path if index.base_path else Path(file_path)
+    full_path = _resolve_file_path(index.base_path, file_path)
     if not full_path.exists():
         return {"success": False, "error": f"File not found: {file_path}"}
 
@@ -218,7 +250,162 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
             "end_line": end_line or len(lines)
         }
     except Exception as e:
-        return {"success": False, "error": f"Failed to read file: {str(e)}"}
+        return _create_error_response(e, "Failed to read file")
+
+
+# ----- 符号语法体提取工具 - Linus式启发式算法 -----
+
+def _detect_syntax_body_end(lines: List[str], start_line: int, language: str) -> int:
+    """
+    检测语法体结束行 - Linus式启发式算法
+
+    统一算法处理不同语言，消除特殊情况
+    """
+    if start_line >= len(lines):
+        return start_line
+
+    start_idx = start_line - 1  # 转换为0索引
+
+    # 语言特定的检测策略
+    if language in ['python']:
+        return _detect_python_body_end(lines, start_idx)
+    elif language in ['javascript', 'typescript', 'java', 'c', 'cpp', 'rust', 'go']:
+        return _detect_brace_body_end(lines, start_idx)
+    else:
+        # 默认启发式：基于缩进的通用算法
+        return _detect_indent_body_end(lines, start_idx)
+
+
+def _detect_python_body_end(lines: List[str], start_idx: int) -> int:
+    """Python缩进检测 - 最简实现"""
+    if start_idx >= len(lines):
+        return start_idx + 1
+
+    start_line = lines[start_idx].rstrip()
+    if not start_line:
+        return start_idx + 1
+
+    # 计算起始缩进
+    start_indent = len(start_line) - len(start_line.lstrip())
+
+    # 查找第一个小于等于起始缩进的非空行
+    for i in range(start_idx + 1, len(lines)):
+        line = lines[i].rstrip()
+        if not line:  # 跳过空行
+            continue
+
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= start_indent:
+            return i  # 返回1索引行号
+
+    return len(lines)  # 文件末尾
+
+
+def _detect_brace_body_end(lines: List[str], start_idx: int) -> int:
+    """大括号匹配检测 - 适用于C系语言"""
+    if start_idx >= len(lines):
+        return start_idx + 1
+
+    brace_count = 0
+    found_opening = False
+
+    # 从起始行开始扫描
+    for i in range(start_idx, len(lines)):
+        line = lines[i]
+
+        for char in line:
+            if char == '{':
+                brace_count += 1
+                found_opening = True
+            elif char == '}':
+                brace_count -= 1
+                if found_opening and brace_count == 0:
+                    return i + 2  # 返回1索引，包含结束大括号的下一行
+
+    return len(lines)  # 文件末尾
+
+
+def _detect_indent_body_end(lines: List[str], start_idx: int) -> int:
+    """通用缩进检测 - 语言无关算法"""
+    if start_idx >= len(lines):
+        return start_idx + 1
+
+    start_line = lines[start_idx].rstrip()
+    if not start_line:
+        return start_idx + 1
+
+    # 计算起始缩进
+    start_indent = len(start_line) - len(start_line.lstrip())
+
+    # 查找缩进回退的位置
+    for i in range(start_idx + 1, len(lines)):
+        line = lines[i].rstrip()
+        if not line:  # 跳过空行
+            continue
+
+        current_indent = len(line) - len(line.lstrip())
+        if current_indent <= start_indent:
+            return i  # 返回1索引行号
+
+    return len(lines)  # 文件末尾
+
+
+@handle_mcp_errors
+def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto") -> Dict[str, Any]:
+    """
+    获取符号完整语法体 - Linus式组合现有功能
+
+    统一接口处理所有符号类型和语言
+    """
+    index = get_index()
+
+    # 1. 查找符号信息
+    symbol_info = index.symbols.get(symbol_name)
+    if not symbol_info:
+        return {"success": False, "error": f"Symbol not found: {symbol_name}"}
+
+    # 使用符号信息中的文件路径，除非显式指定
+    target_file = file_path or symbol_info.file
+    start_line = symbol_info.line
+
+    # 2. 自动检测语言
+    if language == "auto":
+        file_info = index.get_file(target_file)
+        language = file_info.language if file_info else "unknown"
+
+    # 3. 读取文件内容
+    try:
+        full_path = _resolve_file_path(index.base_path, target_file)
+        if not full_path.exists():
+            return {"success": False, "error": f"File not found: {target_file}"}
+
+        lines = full_path.read_text(encoding='utf-8', errors='ignore').split('\n')
+
+        # 4. 检测语法体边界
+        end_line = _detect_syntax_body_end(lines, start_line, language)
+
+        # 5. 提取语法体内容
+        start_idx = max(0, start_line - 1)
+        end_idx = min(len(lines), end_line)
+        body_lines = lines[start_idx:end_idx]
+        line_numbers = list(range(start_line, start_line + len(body_lines)))
+
+        return {
+            "success": True,
+            "symbol_name": symbol_name,
+            "symbol_type": symbol_info.type,
+            "file_path": target_file,
+            "language": language,
+            "start_line": start_line,
+            "end_line": end_line,
+            "body_lines": body_lines,
+            "line_numbers": line_numbers,
+            "signature": symbol_info.signature,
+            "total_lines": len(body_lines)
+        }
+
+    except Exception as e:
+        return _create_error_response(e, "Failed to extract symbol body")
 
 
 # ----- 语义编辑工具 - 新增功能 -----
@@ -327,19 +514,29 @@ def tool_full_rebuild_index() -> Dict[str, Any]:
 
 @handle_mcp_errors
 def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
-    """应用编辑 - 原子操作"""
+    """应用编辑 - 原子操作，使用路径解析"""
     from .edit import EditOperation, apply_edit
+
+    # 获取索引以确定项目路径
+    try:
+        index = get_index()
+        resolved_path = _resolve_file_path(index.base_path, file_path)
+    except RuntimeError:
+        # 索引未初始化，使用相对路径
+        resolved_path = Path(file_path)
+
     operation = EditOperation(
-        file_path=file_path,
+        file_path=str(resolved_path),
         old_content=old_content,
         new_content=new_content
     )
 
-    success = apply_edit(operation)
+    success, error_msg = apply_edit(operation)
     return {
         "success": success,
         "backup_path": operation.backup_path,
-        "error": None if success else "Failed to apply edit"
+        "error": error_msg,
+        "resolved_path": str(resolved_path)  # 调试信息
     }
 
 # ----- SCIP协议工具 - Linus风格统一接口 -----

@@ -17,6 +17,16 @@ from .index import SearchQuery, SearchResult, CodeIndex
 from .cache import get_file_cache
 
 
+@lru_cache(maxsize=500)
+def _compile_regex_cached(pattern: str, case_sensitive: bool) -> Optional[re.Pattern]:
+    """模块级正则缓存 - 避免实例方法内存泄漏"""
+    try:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        return re.compile(pattern, flags)
+    except re.error:
+        return None
+
+
 class OptimizedSearchEngine:
     """优化搜索引擎 - 直接数据操作 + Linus风格缓存"""
 
@@ -53,18 +63,9 @@ class OptimizedSearchEngine:
         """获取文件行 - 使用优化缓存"""
         return self.file_cache.get_file_lines(file_path)
 
-    @lru_cache(maxsize=500)
-    def _get_regex_cached(self, pattern: str, case_sensitive: bool) -> Optional[re.Pattern]:
-        """LRU缓存正则表达式编译 - Linus风格内存优化"""
-        try:
-            flags = 0 if case_sensitive else re.IGNORECASE
-            return re.compile(pattern, flags)
-        except re.error:
-            return None
-
     def _get_regex(self, pattern: str, case_sensitive: bool) -> Optional[re.Pattern]:
-        """获取正则表达式 - 使用LRU缓存"""
-        return self._get_regex_cached(pattern, case_sensitive)
+        """获取正则表达式 - 使用模块级缓存"""
+        return _compile_regex_cached(pattern, case_sensitive)
 
     def _search_text_optimized(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """优化文本搜索 - 预处理 + 早期终止"""
@@ -159,11 +160,11 @@ class OptimizedSearchEngine:
     def clear_cache(self):
         """清理缓存 - 内存管理"""
         self.file_cache.clear_cache()
-        self._get_regex_cached.cache_clear()  # 清理LRU缓存
-    
+        _compile_regex_cached.cache_clear()  # 清理模块级LRU缓存
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
-        regex_info = self._get_regex_cached.cache_info()
+        regex_info = _compile_regex_cached.cache_info()
         return {
             "file_cache": self.file_cache.get_cache_stats(),
             "regex_cache": {

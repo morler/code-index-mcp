@@ -6,7 +6,7 @@ Linus-style semantic editing - 直接数据操作
 """
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import os
 import re
 import shutil
@@ -53,8 +53,9 @@ def rename_symbol(old_name: str, new_name: str) -> EditResult:
         if not file_path:
             continue
 
-        # 直接文件操作
-        full_path = Path(index.base_path) / file_path
+        # 使用统一路径解析
+        base_path = Path(index.base_path) if index.base_path else Path.cwd()
+        full_path = Path(file_path) if Path(file_path).is_absolute() else base_path / file_path
         if not full_path.exists():
             continue
 
@@ -106,31 +107,84 @@ def add_import(file_path: str, import_statement: str) -> EditResult:
     )
 
     # 立即应用编辑
-    if apply_edit(op):
+    success, error = apply_edit(op)
+    if success:
         return EditResult(True, [op], files_changed=1)
     else:
-        return EditResult(False, [op], "Failed to write file")
+        return EditResult(False, [op], error or "Failed to write file")
 
 
-def apply_edit(operation: EditOperation) -> bool:
-    """应用编辑 - 原子操作"""
+def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
+    """应用编辑 - 原子操作，返回成功状态和错误信息"""
     try:
-        # 创建备份
+        file_path = Path(operation.file_path)
+
+        # 1. 检查文件是否存在
+        if not file_path.exists():
+            return False, f"File not found: {operation.file_path}"
+
+        # 2. 读取当前文件内容验证
+        try:
+            current_content = file_path.read_text(encoding='utf-8')
+        except UnicodeDecodeError as e:
+            return False, f"File encoding error: {e}"
+        except PermissionError:
+            return False, f"Permission denied: {operation.file_path}"
+
+        # 3. 验证old_content匹配（支持部分匹配和删除操作）
+        if operation.old_content and operation.old_content.strip():
+            old_stripped = operation.old_content.strip()
+            current_stripped = current_content.strip()
+
+            # 尝试精确匹配
+            if old_stripped == current_stripped:
+                pass  # 完全匹配，继续
+            # 尝试部分匹配 - old_content应该是current_content的子集
+            elif old_stripped in current_stripped:
+                # 部分匹配成功，更新操作为完整文件替换
+                operation.old_content = current_content
+
+                # 处理删除操作（new_content为空）
+                if not operation.new_content.strip():
+                    # 删除操作：移除匹配的行或内容
+                    lines = current_content.splitlines()
+                    new_lines = []
+                    for line in lines:
+                        if old_stripped not in line:
+                            new_lines.append(line)
+                    operation.new_content = '\n'.join(new_lines)
+                else:
+                    # 替换操作：在当前内容中替换匹配的部分
+                    operation.new_content = current_content.replace(old_stripped, operation.new_content.strip())
+            else:
+                return False, f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}"
+
+        # 4. 创建备份
         if operation.backup_path is None:
-            backup_dir = Path(operation.file_path).parent / ".edit_backup"
+            backup_dir = file_path.parent / ".edit_backup"
             backup_dir.mkdir(exist_ok=True)
             timestamp = int(time.time())
-            backup_name = f"{Path(operation.file_path).name}.{timestamp}.bak"
+            backup_name = f"{file_path.name}.{timestamp}.bak"
             operation.backup_path = str(backup_dir / backup_name)
 
-        shutil.copy2(operation.file_path, operation.backup_path)
+        try:
+            shutil.copy2(operation.file_path, operation.backup_path)
+        except PermissionError:
+            return False, f"Cannot create backup: permission denied for {operation.backup_path}"
+        except OSError as e:
+            return False, f"Backup creation failed: {e}"
 
-        # 写入新内容
-        Path(operation.file_path).write_text(operation.new_content, encoding='utf-8')
-        return True
+        # 5. 写入新内容
+        try:
+            file_path.write_text(operation.new_content, encoding='utf-8')
+            return True, None
+        except PermissionError:
+            return False, f"Cannot write file: permission denied for {operation.file_path}"
+        except OSError as e:
+            return False, f"Write operation failed: {e}"
 
-    except Exception:
-        return False
+    except Exception as e:
+        return False, f"Unexpected error: {e}"
 
 
 def rollback_edit(operation: EditOperation) -> bool:

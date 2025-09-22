@@ -25,23 +25,35 @@ source .venv/bin/activate  # Unix
 uv run code-index-mcp
 
 # Test simplified architecture
-python test_simple_architecture.py
+python tests/test_simple_architecture.py
 ```
 
-### Testing and Debugging
+### Testing and Quality
 ```bash
+# Run all tests
+pytest tests/
+
+# Run specific test types
+pytest tests/ -m unit
+pytest tests/ -m integration
+pytest tests/ -m "not slow"
+
+# Run test coverage
+pytest --cov=src/code_index_mcp tests/
+
+# Type checking
+mypy src/code_index_mcp
+
 # Debug with MCP Inspector
 npx @modelcontextprotocol/inspector uv run code-index-mcp
-
-# Alternative pip installation (if needed)
-pip install code-index-mcp
 ```
 
 ### Dependencies Management
 - **Build system**: setuptools
 - **Package manager**: uv (recommended) or pip
 - **Python version**: 3.10+
-- **Core dependencies**: mcp, pathlib (stdlib only!)
+- **Core dependencies**: mcp, tree-sitter (multiple language parsers), watchdog, msgpack, xxhash
+- **Dev dependencies**: pytest, pytest-cov, mypy
 
 ## Architecture Overview - Linus Style
 
@@ -59,32 +71,32 @@ The project follows **Linus principles** with direct data manipulation:
 #### 1. Core Data Structures (`src/core/`)
 ```
 src/core/
-├── index.py          # Unified CodeIndex (200 lines)
-├── builder.py        # Direct index building (150 lines)
-├── edit.py           # Semantic editing operations (130 lines) ✨ NEW
-├── mcp_tools.py      # MCP tool implementations (240 lines)
-├── tool_registry.py  # Tool registration (70 lines)
-└── __init__.py       # Simple exports (10 lines)
+├── index.py          # Unified CodeIndex - main data structure
+├── builder.py        # Direct index building
+├── edit.py           # Semantic editing operations ✨ NEW
+├── mcp_tools.py      # MCP tool implementations
+├── cache.py          # Caching infrastructure
+└── incremental.py    # Incremental update logic
 ```
 
-#### 2. Simplified Server (`src/code_index_mcp/server.py`)
-- **49 lines** (was 705 lines - 93% reduction!)
-- Direct tool registration
-- No abstractions or services
-- Pure MCP integration
+#### 2. Simplified Server (`src/code_index_mcp/server_unified.py`)
+- **Minimal implementation** - dramatically reduced complexity
+- Uses unified tool entry point
+- Direct tool registration via `execute_tool(operation, **params)`
+- Backward compatibility for specific tools
 
-#### 3. Unified Operations
-**Single entry point** replaces multiple specialized services:
+#### 3. Unified Tool Interface
+**Single entry point** - the `unified_tool` function handles all operations:
 ```python
-# Before (complex service calls):
-search_service.find_references(query)
-file_service.get_file_info(path)
-semantic_service.find_callers(func)
+# Unified tool pattern - eliminates special cases
+execute_tool("search_code", pattern="function", search_type="text")
+execute_tool("find_files", pattern="*.py")
+execute_tool("set_project_path", path="/path/to/project")
 
-# After (direct data access):
-index.search(SearchQuery(pattern, "references"))
-index.get_file(path)
-index.search(SearchQuery(func, "callers"))
+# Direct index access
+index = get_index()
+result = index.search(SearchQuery(pattern, search_type))
+files = index.find_files_by_pattern("*.py")
 ```
 
 ### Search Engine Integration
@@ -195,9 +207,10 @@ stats = index.get_stats()
 
 ## Entry Points
 
-- **Main server**: `src/code_index_mcp/server.py:main()` (49 lines)
+- **Main server**: `src/code_index_mcp/server_unified.py:main()` (unified tool interface)
 - **Core index**: `src/core/index.py:CodeIndex` (unified data structure)
-- **Test runner**: `test_simple_architecture.py` (validation)
+- **Tool execution**: `src/core/mcp_tools.py:execute_tool()` (operation dispatcher)
+- **Test runner**: `tests/test_simple_architecture.py` (validation)
 
 ## Configuration
 
@@ -211,7 +224,7 @@ stats = index.get_stats()
 1. **Extend CodeIndex** directly in `src/core/index.py`
 2. **Add search operation** to `_search_ops` registry
 3. **Add MCP tool** in `src/core/mcp_tools.py`
-4. **Test with** `test_simple_architecture.py`
+4. **Test with** `pytest tests/test_simple_architecture.py`
 
 ### Linus Development Rules
 - **No new abstractions**: Extend existing data structures
@@ -237,8 +250,8 @@ stats = index.get_stats()
 ### What Replaces It
 - `src/core/index.py` - Single data structure
 - `src/core/builder.py` - Direct index building
-- `src/core/mcp_tools.py` - Simple tool functions
-- `src/code_index_mcp/server.py` - Minimal server (49 lines)
+- `src/core/mcp_tools.py` - Simple tool functions with unified interface
+- `src/code_index_mcp/server_unified.py` - Minimal server with operation dispatch
 
 ### Compatibility
 - ✅ All MCP tools work identically
@@ -268,4 +281,41 @@ stats = index.get_stats()
 *"This codebase now embodies the Unix philosophy: Do one thing, do it well, and do it simply. We eliminated the Java-style over-engineering that was choking the system. The result is 10x simpler architecture that solves the same problems with direct, efficient code."*
 
 **Remember**: Simplicity is the ultimate sophistication. Always choose the direct path over the abstracted one.
-- **主动使用CodeIndex工具**进行代码分析、搜索和重构
+
+## Package Configuration
+
+### Entry Point
+```bash
+# Package entry point (pyproject.toml)
+code-index-mcp = "code_index_mcp.server_unified:main"
+```
+
+### Multi-Language Tree-sitter Support
+The project includes tree-sitter parsers for:
+- Python, JavaScript, TypeScript, Java, Go, Zig, Objective-C, C, C++, Rust
+
+### Available Test Commands
+```bash
+# Quick architecture validation
+python tests/test_simple_architecture.py
+
+# Full test suite with multiple types
+pytest tests/test_*.py
+
+# Specific test categories
+pytest tests/ -m unit          # Unit tests only
+pytest tests/ -m integration   # Integration tests only
+pytest tests/ -m "not slow"    # Skip slow tests
+```
+
+### Debugging Features
+```bash
+# MCP Inspector for tool debugging
+npx @modelcontextprotocol/inspector uv run code-index-mcp
+
+# Enable verbose logging
+export MCP_LOG_LEVEL=debug
+uv run code-index-mcp
+```
+
+- **Proactively use the CodeIndex tool for code analysis, search, read, edit and rewrite**
