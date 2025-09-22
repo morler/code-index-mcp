@@ -150,6 +150,98 @@ def detect_language(file_path: str) -> str:
     suffix = Path(file_path).suffix.lower()
     return LANGUAGE_MAP.get(suffix, 'unknown')
 
+# Linus原则: Tree-sitter统一语言支持架构 - 零特殊情况
+def _get_tree_sitter_languages():
+    """延迟初始化Tree-sitter语言映射 - 避免导入时错误"""
+    languages = {}
+    
+    # 动态导入可用的tree-sitter语言
+    language_modules = [
+        ('python', 'tree_sitter_python'),
+        ('javascript', 'tree_sitter_javascript'),
+        ('typescript', 'tree_sitter_typescript'),
+        ('java', 'tree_sitter_java'),
+        ('go', 'tree_sitter_go'),
+        ('zig', 'tree_sitter_zig'),
+        ('rust', 'tree_sitter_rust'),
+        ('c', 'tree_sitter_c'),
+        ('cpp', 'tree_sitter_cpp'),
+    ]
+    
+    for lang_name, module_name in language_modules:
+        try:
+            import importlib
+            module = importlib.import_module(module_name)
+            languages[lang_name] = module
+        except ImportError:
+            # 模块不可用时跳过
+            pass
+    
+    return languages
+
+# 全局缓存的语言映射
+_CACHED_LANGUAGES = None
+
+def get_tree_sitter_languages():
+    """获取Tree-sitter语言映射 - 缓存优化"""
+    global _CACHED_LANGUAGES
+    if _CACHED_LANGUAGES is None:
+        _CACHED_LANGUAGES = _get_tree_sitter_languages()
+    return _CACHED_LANGUAGES
+
+
+def get_parser(language: str) -> Optional['Parser']:
+    """
+    获取语言解析器 - 统一接口
+    
+    Linus原则: 直接数据操作，无特殊情况
+    """
+    try:
+        from tree_sitter import Parser, Language
+    except ImportError:
+        return None
+    
+    # 获取语言模块
+    tree_sitter_languages = get_tree_sitter_languages()
+    parser_module = tree_sitter_languages.get(language)
+    if not parser_module:
+        return None
+    
+    try:
+        # 处理语言特定的函数名
+        language_func = None
+        if language == 'typescript':
+            # TypeScript模块有两个函数：language_typescript 和 language_tsx
+            if hasattr(parser_module, 'language_typescript'):
+                language_func = parser_module.language_typescript
+            elif hasattr(parser_module, 'language'):
+                language_func = parser_module.language
+        else:
+            # 其他语言使用标准的language函数
+            if hasattr(parser_module, 'language'):
+                language_func = parser_module.language
+        
+        if not language_func:
+            return None
+        
+        language_capsule = language_func()
+        language_obj = Language(language_capsule)
+        parser = Parser(language_obj)
+        return parser
+    except Exception:
+        # 语言包不可用时静默返回None
+        return None
+
+
+def get_supported_tree_sitter_languages() -> List[str]:
+    """获取支持的tree-sitter语言列表"""
+    tree_sitter_languages = get_tree_sitter_languages()
+    supported = []
+    for language in tree_sitter_languages.keys():
+        if get_parser(language) is not None:
+            supported.append(language)
+    return supported
+
 class IndexBuilder:
     """极简索引构建器 - 零抽象层"""
 
@@ -159,7 +251,20 @@ class IndexBuilder:
         self._language_processors = {
             '.py': self._process_python_ast,
             '.v': self._process_vlang_regex,
-            '.rs': self._process_rust_tree_sitter,
+            '.rs': self._process_tree_sitter,
+            '.js': self._process_tree_sitter,
+            '.jsx': self._process_tree_sitter,
+            '.ts': self._process_tree_sitter,
+            '.tsx': self._process_tree_sitter,
+            '.java': self._process_tree_sitter,
+            '.go': self._process_tree_sitter,
+            '.zig': self._process_tree_sitter,
+            '.c': self._process_tree_sitter,
+            '.h': self._process_tree_sitter,
+            '.cpp': self._process_tree_sitter,
+            '.hpp': self._process_tree_sitter,
+            '.cc': self._process_tree_sitter,
+            '.cxx': self._process_tree_sitter,
         }
 
     # Linus原则: 统一AST操作架构 - 零特殊情况
@@ -383,6 +488,208 @@ class IndexBuilder:
 
         # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
         self._register_symbols(symbols, file_path)
+
+    @safe_file_operation
+    def _process_tree_sitter(self, file_path: str) -> None:
+        """
+        统一tree-sitter解析器 - Linus风格直接AST操作
+        
+        Linus原则: 一个函数处理所有tree-sitter语言，消除特殊情况
+        """
+        language = detect_language(file_path)
+        parser = get_parser(language)
+        
+        if not parser:
+            # 语言不支持tree-sitter时静默跳过
+            return
+
+        # 获取文件内容
+        try:
+            from .cache import get_file_cache
+            lines = get_file_cache().get_file_lines(file_path)
+            content = "\n".join(lines).encode('utf-8')
+        except ImportError:
+            # 缓存不可用时直接读取文件
+            try:
+                content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
+            except Exception:
+                return
+
+        # 解析AST
+        try:
+            tree = parser.parse(content)
+        except Exception:
+            return
+
+        symbols = {}
+        imports = []
+
+        # Linus原则: 语言特定的AST操作映射 - 零if/elif分支
+        language_operations = self._get_language_operations(language)
+        
+        def process_node(node):
+            """统一AST节点处理 - Good Taste架构"""
+            operation = language_operations.get(node.type)
+            if not operation:
+                return
+                
+            symbol_type, extractor = operation
+            try:
+                result = extractor(node, content)
+                if result:
+                    self._add_extracted_data(symbol_type, result, symbols, imports)
+            except Exception:
+                # 提取失败时继续处理其他节点
+                pass
+
+        def walk_tree(node):
+            """AST遍历 - 递归处理"""
+            process_node(node)
+            for child in node.children:
+                walk_tree(child)
+
+        walk_tree(tree.root_node)
+
+        file_info = FileInfo(
+            language=language,
+            line_count=len(content.decode('utf-8', errors='ignore').splitlines()),
+            symbols=symbols,
+            imports=imports
+        )
+
+        self.index.add_file(file_path, file_info)
+        
+        # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+        self._register_symbols(symbols, file_path)
+
+    def _get_language_operations(self, language: str) -> Dict[str, tuple]:
+        """
+        获取语言特定的AST操作映射
+        
+        Linus原则: 操作注册表模式，消除条件分支
+        """
+        # 通用节点名称映射 - 大多数C风格语言通用
+        common_operations = {
+            # 函数定义
+            'function_declaration': ('functions', self._extract_tree_sitter_name),
+            'function_definition': ('functions', self._extract_tree_sitter_name),
+            'method_declaration': ('functions', self._extract_tree_sitter_name),
+            'method_definition': ('functions', self._extract_tree_sitter_name),
+            
+            # 类/结构体定义
+            'class_declaration': ('classes', self._extract_tree_sitter_name),
+            'class_definition': ('classes', self._extract_tree_sitter_name),
+            'struct_declaration': ('structs', self._extract_tree_sitter_name),
+            'struct_definition': ('structs', self._extract_tree_sitter_name),
+            
+            # 接口/特质定义
+            'interface_declaration': ('interfaces', self._extract_tree_sitter_name),
+            'interface_definition': ('interfaces', self._extract_tree_sitter_name),
+            'trait_declaration': ('traits', self._extract_tree_sitter_name),
+            'trait_definition': ('traits', self._extract_tree_sitter_name),
+            
+            # 导入语句
+            'import_declaration': ('imports', self._extract_tree_sitter_import),
+            'import_statement': ('imports', self._extract_tree_sitter_import),
+            'use_declaration': ('imports', self._extract_tree_sitter_import),
+        }
+        
+        # 语言特定的扩展
+        language_specific = {
+            'rust': {
+                'function_item': ('functions', self._extract_rust_name),
+                'struct_item': ('structs', self._extract_rust_name),
+                'enum_item': ('enums', self._extract_rust_name),
+                'trait_item': ('traits', self._extract_rust_name),
+                'impl_item': ('impls', self._extract_rust_impl),
+                'use_declaration': ('imports', self._extract_rust_use),
+            },
+            'java': {
+                'class_declaration': ('classes', self._extract_tree_sitter_name),
+                'interface_declaration': ('interfaces', self._extract_tree_sitter_name),
+                'method_declaration': ('functions', self._extract_tree_sitter_name),
+                'import_declaration': ('imports', self._extract_tree_sitter_import),
+            },
+            'javascript': {
+                'function_declaration': ('functions', self._extract_tree_sitter_name),
+                'class_declaration': ('classes', self._extract_tree_sitter_name),
+                'import_statement': ('imports', self._extract_tree_sitter_import),
+                'export_statement': ('exports', self._extract_tree_sitter_name),
+            },
+            'typescript': {
+                'function_declaration': ('functions', self._extract_tree_sitter_name),
+                'class_declaration': ('classes', self._extract_tree_sitter_name),
+                'interface_declaration': ('interfaces', self._extract_tree_sitter_name),
+                'import_statement': ('imports', self._extract_tree_sitter_import),
+                'export_statement': ('exports', self._extract_tree_sitter_name),
+            },
+            'c': {
+                'function_definition': ('functions', self._extract_tree_sitter_name),
+                'struct_specifier': ('structs', self._extract_tree_sitter_name),
+                'preproc_include': ('imports', self._extract_tree_sitter_include),
+            },
+            'cpp': {
+                'function_definition': ('functions', self._extract_tree_sitter_name),
+                'class_specifier': ('classes', self._extract_tree_sitter_name),
+                'struct_specifier': ('structs', self._extract_tree_sitter_name),
+                'preproc_include': ('imports', self._extract_tree_sitter_include),
+            },
+            'go': {
+                'function_declaration': ('functions', self._extract_tree_sitter_name),
+                'type_declaration': ('types', self._extract_tree_sitter_name),
+                'import_declaration': ('imports', self._extract_tree_sitter_import),
+            },
+            'zig': {
+                'function_declaration': ('functions', self._extract_tree_sitter_name),
+                'struct_declaration': ('structs', self._extract_tree_sitter_name),
+            }
+        }
+        
+        # 合并通用操作和语言特定操作
+        operations = common_operations.copy()
+        if language in language_specific:
+            operations.update(language_specific[language])
+        
+        return operations
+
+    def _extract_tree_sitter_name(self, node, content: bytes) -> Optional[str]:
+        """从tree-sitter节点提取名称"""
+        try:
+            # 查找identifier子节点
+            for child in node.children:
+                if child.type == 'identifier':
+                    start_byte = child.start_byte
+                    end_byte = child.end_byte
+                    name = content[start_byte:end_byte].decode('utf-8', errors='ignore')
+                    return name.strip() if name else None
+            return None
+        except Exception:
+            return None
+
+    def _extract_tree_sitter_import(self, node, content: bytes) -> Optional[str]:
+        """从tree-sitter节点提取导入信息"""
+        try:
+            # 提取导入语句的文本
+            start_byte = node.start_byte
+            end_byte = node.end_byte
+            import_text = content[start_byte:end_byte].decode('utf-8', errors='ignore')
+            return import_text.strip() if import_text else None
+        except Exception:
+            return None
+
+    def _extract_tree_sitter_include(self, node, content: bytes) -> Optional[str]:
+        """从tree-sitter节点提取C/C++包含信息"""
+        try:
+            # 查找string_literal或system_lib_string子节点
+            for child in node.children:
+                if child.type in ['string_literal', 'system_lib_string']:
+                    start_byte = child.start_byte
+                    end_byte = child.end_byte
+                    include_path = content[start_byte:end_byte].decode('utf-8', errors='ignore')
+                    return include_path.strip() if include_path else None
+            return None
+        except Exception:
+            return None
 
     def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
         """将符号注册到全局索引 - Linus原则: 消除重复数据结构"""
