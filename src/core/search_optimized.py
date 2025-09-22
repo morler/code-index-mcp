@@ -11,17 +11,18 @@ from typing import Dict, List, Any, Optional
 import time
 import re
 from pathlib import Path
+from functools import lru_cache
 
 from .index import SearchQuery, SearchResult, CodeIndex
+from .cache import get_file_cache
 
 
 class OptimizedSearchEngine:
-    """优化搜索引擎 - 直接数据操作"""
+    """优化搜索引擎 - 直接数据操作 + Linus风格缓存"""
 
     def __init__(self, index: CodeIndex):
         self.index = index
-        self._file_cache: Dict[str, List[str]] = {}
-        self._regex_cache: Dict[str, re.Pattern] = {}
+        self.file_cache = get_file_cache()  # 使用全局优化缓存
 
     def search(self, query: SearchQuery) -> SearchResult:
         """统一搜索分派 - 零分支"""
@@ -49,27 +50,21 @@ class OptimizedSearchEngine:
         )
 
     def _get_file_lines(self, file_path: str) -> List[str]:
-        """缓存文件内容 - 避免重复I/O"""
-        if file_path not in self._file_cache:
-            try:
-                # Linus原则: IndexBuilder存储的是相对于工作目录的路径，直接使用
-                full_path = Path(file_path)
-                content = full_path.read_text(encoding='utf-8', errors='ignore')
-                self._file_cache[file_path] = content.split('\n')
-            except Exception:
-                self._file_cache[file_path] = []
-        return self._file_cache[file_path]
+        """获取文件行 - 使用优化缓存"""
+        return self.file_cache.get_file_lines(file_path)
+
+    @lru_cache(maxsize=500)
+    def _get_regex_cached(self, pattern: str, case_sensitive: bool) -> Optional[re.Pattern]:
+        """LRU缓存正则表达式编译 - Linus风格内存优化"""
+        try:
+            flags = 0 if case_sensitive else re.IGNORECASE
+            return re.compile(pattern, flags)
+        except re.error:
+            return None
 
     def _get_regex(self, pattern: str, case_sensitive: bool) -> Optional[re.Pattern]:
-        """缓存正则表达式 - 避免重复编译"""
-        cache_key = f"{pattern}:{case_sensitive}"
-        if cache_key not in self._regex_cache:
-            try:
-                flags = 0 if case_sensitive else re.IGNORECASE
-                self._regex_cache[cache_key] = re.compile(pattern, flags)
-            except re.error:
-                self._regex_cache[cache_key] = None
-        return self._regex_cache[cache_key]
+        """获取正则表达式 - 使用LRU缓存"""
+        return self._get_regex_cached(pattern, case_sensitive)
 
     def _search_text_optimized(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """优化文本搜索 - 预处理 + 早期终止"""
@@ -163,5 +158,18 @@ class OptimizedSearchEngine:
 
     def clear_cache(self):
         """清理缓存 - 内存管理"""
-        self._file_cache.clear()
-        self._regex_cache.clear()
+        self.file_cache.clear_cache()
+        self._get_regex_cached.cache_clear()  # 清理LRU缓存
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        regex_info = self._get_regex_cached.cache_info()
+        return {
+            "file_cache": self.file_cache.get_cache_stats(),
+            "regex_cache": {
+                "hits": regex_info.hits,
+                "misses": regex_info.misses,
+                "current_size": regex_info.currsize,
+                "max_size": regex_info.maxsize
+            }
+        }

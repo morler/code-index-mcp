@@ -233,9 +233,13 @@ class IndexBuilder:
 
     @safe_file_operation
     def _parse_python(self, file_path: str) -> None:
-        """Python AST解析器 - Linus风格零分支"""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        """Python AST解析器 - Linus风格零分支 + 优化缓存"""
+        from .cache import get_file_cache
+        
+        # 使用缓存获取文件内容 - 避免重复I/O
+        lines = get_file_cache().get_file_lines(file_path)
+        content = '
+'.join(lines)
 
         tree = ast.parse(content, filename=file_path)
         symbols = {}
@@ -259,9 +263,13 @@ class IndexBuilder:
 
     @safe_file_operation
     def _parse_vlang(self, file_path: str) -> None:
-        """V语言正则表达式解析器 - 极简实现"""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        """V语言正则表达式解析器 - 极简实现 + 优化缓存"""
+        from .cache import get_file_cache
+        
+        # 使用缓存获取文件内容
+        lines = get_file_cache().get_file_lines(file_path)
+        content = '
+'.join(lines)
 
         symbols = {}
         imports = []
@@ -304,15 +312,18 @@ class IndexBuilder:
 
     @safe_file_operation
     def _parse_rust(self, file_path: str) -> None:
-        """Rust tree-sitter解析器 - Linus式直接AST操作"""
+        """Rust tree-sitter解析器 - Linus式直接AST操作 + 优化缓存"""
         import tree_sitter_rust as ts_rust
         from tree_sitter import Language, Parser
+        from .cache import get_file_cache
 
         RUST_LANGUAGE = Language(ts_rust.language())
         parser = Parser(RUST_LANGUAGE)
 
-        with open(file_path, 'rb') as f:
-            content = f.read()
+        # 使用缓存获取文件内容，但tree-sitter需要bytes
+        lines = get_file_cache().get_file_lines(file_path)
+        content = '
+'.join(lines).encode('utf-8')
 
         tree = parser.parse(content)
         symbols = {}
