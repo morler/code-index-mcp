@@ -11,14 +11,14 @@ from .index import CodeIndex, FileInfo, SymbolInfo
 
 
 from functools import wraps
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict, Any
 
 
 def safe_file_operation(func: Callable) -> Callable:
     """
-    统一错误处理装饰器 - 消除重复模式
+    文件操作错误处理装饰器 - 静默失败
     
-    Linus原则: DRY (Don't Repeat Yourself)
+    Linus原则: 不中断整体流程
     """
     @wraps(func)
     def wrapper(*args, **kwargs) -> Optional[bool]:
@@ -28,6 +28,30 @@ def safe_file_operation(func: Callable) -> Callable:
         except Exception:
             # Linus原则: 静默失败，不中断整体流程
             return None
+    return wrapper
+
+
+def handle_mcp_errors(func: Callable) -> Callable:
+    """
+    MCP工具统一错误处理装饰器 - 标准化返回格式
+    
+    Linus原则: 消除重复的try/except模式
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> Dict[str, Any]:
+        try:
+            result = func(*args, **kwargs)
+            # 确保所有成功响应包含success标志
+            if isinstance(result, dict) and "success" not in result:
+                result["success"] = True
+            return result
+        except Exception as e:
+            # 统一错误响应格式
+            return {
+                "success": False, 
+                "error": str(e),
+                "function": func.__name__
+            }
     return wrapper
 
 def normalize_path(path: str, base_path: str = None) -> str:
