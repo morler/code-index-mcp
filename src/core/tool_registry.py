@@ -28,6 +28,11 @@ def _import_tools():
         tool_rename_symbol,
         tool_add_import,
         tool_apply_edit,
+        # 增量索引工具
+        tool_update_incrementally,
+        tool_force_update_file,
+        tool_get_changed_files,
+        tool_full_rebuild_index,
     )
 
     return {
@@ -48,6 +53,11 @@ def _import_tools():
         "rename_symbol": tool_rename_symbol,
         "add_import": tool_add_import,
         "apply_edit": tool_apply_edit,
+        # 增量索引工具
+        "update_incrementally": tool_update_incrementally,
+        "force_update_file": tool_force_update_file,
+        "get_changed_files": tool_get_changed_files,
+        "full_rebuild_index": tool_full_rebuild_index,
     }
 
 

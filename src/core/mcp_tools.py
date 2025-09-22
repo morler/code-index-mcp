@@ -142,17 +142,23 @@ def tool_organize_imports(file_path: str) -> Dict[str, Any]:
 
 @handle_mcp_errors
 def tool_refresh_index() -> Dict[str, Any]:
-    """刷新索引 - 重建数据"""
+    """刷新索引 - 优先使用增量更新"""
     index = get_index()
     if not index.base_path:
         return {"success": False, "error": "No project path set"}
 
-    # 简单重建 - 重新设置路径
-    new_index = core_set_project_path(index.base_path)
+    # Linus原则: 优先使用增量更新，减少无意义的重建
+    start_time = time.time()
+    stats = index.update_incrementally()
+    elapsed = time.time() - start_time
+    
     return {
         "success": True,
-        "files_indexed": len(new_index.files),
-        "symbols_indexed": len(new_index.symbols)
+        "files_indexed": len(index.files),
+        "symbols_indexed": len(index.symbols),
+        "update_stats": stats,
+        "update_time": elapsed,
+        "method": "incremental"
     }
 
 
@@ -198,6 +204,81 @@ def tool_add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
         "error": result.error
     }
 
+
+
+@handle_mcp_errors
+def tool_update_incrementally() -> Dict[str, Any]:
+    """增量更新索引 - Linus原则: 只处理变更文件"""
+    index = get_index()
+    if not index.base_path:
+        return {"success": False, "error": "No project path set"}
+
+    start_time = time.time()
+    stats = index.update_incrementally()
+    elapsed = time.time() - start_time
+    
+    return {
+        "success": True,
+        "update_stats": stats,
+        "update_time": elapsed,
+        "files_indexed": len(index.files),
+        "symbols_indexed": len(index.symbols)
+    }
+
+
+@handle_mcp_errors
+def tool_force_update_file(file_path: str) -> Dict[str, Any]:
+    """强制更新指定文件 - 忽略变更检测"""
+    index = get_index()
+    if not index.base_path:
+        return {"success": False, "error": "No project path set"}
+
+    success = index.force_update_file(file_path)
+    return {
+        "success": success,
+        "file_path": file_path,
+        "files_indexed": len(index.files),
+        "symbols_indexed": len(index.symbols)
+    }
+
+
+@handle_mcp_errors
+def tool_get_changed_files() -> Dict[str, Any]:
+    """获取变更文件列表 - 诊断工具"""
+    index = get_index()
+    if not index.base_path:
+        return {"success": False, "error": "No project path set"}
+
+    changed_files = index.get_changed_files()
+    from .incremental import get_incremental_indexer
+    stats = get_incremental_indexer().get_stats()
+    
+    return {
+        "success": True,
+        "changed_files": changed_files,
+        "stats": stats
+    }
+
+
+@handle_mcp_errors
+def tool_full_rebuild_index() -> Dict[str, Any]:
+    """完全重建索引 - 强制全量更新"""
+    index = get_index()
+    if not index.base_path:
+        return {"success": False, "error": "No project path set"}
+
+    # 清空现有索引并重建
+    start_time = time.time()
+    new_index = core_set_project_path(index.base_path)
+    elapsed = time.time() - start_time
+    
+    return {
+        "success": True,
+        "files_indexed": len(new_index.files),
+        "symbols_indexed": len(new_index.symbols),
+        "rebuild_time": elapsed,
+        "method": "full_rebuild"
+    }
 
 @handle_mcp_errors
 def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:

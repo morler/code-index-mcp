@@ -18,16 +18,15 @@ def safe_file_operation(func: Callable) -> Callable:
     """
     文件操作错误处理装饰器 - 静默失败
     
-    Linus原则: 不中断整体流程
+    Linus原则: 不中断整体流程，但保留返回值
     """
     @wraps(func)
-    def wrapper(*args, **kwargs) -> Optional[bool]:
+    def wrapper(*args, **kwargs):
         try:
-            func(*args, **kwargs)
-            return True
+            return func(*args, **kwargs)
         except Exception:
             # Linus原则: 静默失败，不中断整体流程
-            return None
+            return False  # 默认返回False表示操作失败
     return wrapper
 
 
@@ -235,11 +234,14 @@ class IndexBuilder:
     @safe_file_operation
     def _process_python_ast(self, file_path: str) -> None:
         """Python AST解析器 - Linus风格零分支 + 优化缓存"""
-        from .cache import get_file_cache
-        
-        # 使用缓存获取文件内容 - 避免重复I/O
-        lines = get_file_cache().get_file_lines(file_path)
-        content = "\n".join(lines)
+        # 使用缓存获取文件内容 - 避免重复I/O (如果可用)
+        try:
+            from .cache import get_file_cache
+            lines = get_file_cache().get_file_lines(file_path)
+            content = "\n".join(lines)
+        except ImportError:
+            # 缓存不可用时直接读取文件
+            content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
 
         tree = ast.parse(content, filename=file_path)
         symbols = {}
@@ -264,11 +266,14 @@ class IndexBuilder:
     @safe_file_operation
     def _process_vlang_regex(self, file_path: str) -> None:
         """V语言正则表达式解析器 - 极简实现 + 优化缓存"""
-        from .cache import get_file_cache
-        
-        # 使用缓存获取文件内容
-        lines = get_file_cache().get_file_lines(file_path)
-        content = "\n".join(lines)
+        # 使用缓存获取文件内容(如果可用)
+        try:
+            from .cache import get_file_cache
+            lines = get_file_cache().get_file_lines(file_path)
+            content = "\n".join(lines)
+        except ImportError:
+            # 缓存不可用时直接读取文件
+            content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
 
         symbols = {}
         imports = []
@@ -312,16 +317,24 @@ class IndexBuilder:
     @safe_file_operation
     def _process_rust_tree_sitter(self, file_path: str) -> None:
         """Rust tree-sitter解析器 - Linus式直接AST操作 + 优化缓存"""
-        import tree_sitter_rust as ts_rust
-        from tree_sitter import Language, Parser
-        from .cache import get_file_cache
+        try:
+            import tree_sitter_rust as ts_rust
+            from tree_sitter import Language, Parser
+        except ImportError:
+            # tree-sitter不可用时跳过
+            return
 
         RUST_LANGUAGE = Language(ts_rust.language())
         parser = Parser(RUST_LANGUAGE)
 
         # 使用缓存获取文件内容，但tree-sitter需要bytes
-        lines = get_file_cache().get_file_lines(file_path)
-        content = "\n".join(lines).encode('utf-8')
+        try:
+            from .cache import get_file_cache
+            lines = get_file_cache().get_file_lines(file_path)
+            content = "\n".join(lines).encode('utf-8')
+        except ImportError:
+            # 缓存不可用时直接读取文件
+            content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
 
         tree = parser.parse(content)
         symbols = {}

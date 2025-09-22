@@ -71,6 +71,32 @@ class CodeIndex:
         import fnmatch
         return [path for path in self.files.keys() if fnmatch.fnmatch(path, pattern)]
 
+    def update_incrementally(self, root_path: str = None) -> Dict[str, int]:
+        """增量更新索引 - Linus原则: 只处理变更文件"""
+        from .incremental import get_incremental_indexer
+        return get_incremental_indexer().update_index(root_path)
+    
+    def force_update_file(self, file_path: str) -> bool:
+        """强制更新指定文件 - 忽略变更检测"""
+        from .incremental import get_incremental_indexer
+        return get_incremental_indexer().force_update_file(file_path)
+    
+    def get_changed_files(self) -> List[str]:
+        """获取变更文件列表 - 诊断工具"""
+        from .incremental import get_incremental_indexer
+        return get_incremental_indexer().get_changed_files()
+    
+    def remove_file(self, file_path: str) -> None:
+        """移除文件索引 - 统一接口"""
+        self.files.pop(file_path, None)
+        # 移除相关符号
+        symbols_to_remove = [
+            symbol_name for symbol_name, symbol_info in self.symbols.items()
+            if symbol_info.file == file_path
+        ]
+        for symbol_name in symbols_to_remove:
+            self.symbols.pop(symbol_name, None)
+
 
 _global_index: Optional[CodeIndex] = None
 
@@ -89,7 +115,7 @@ def set_project_path(path: str) -> CodeIndex:
     # Linus原则: 一个函数做完整的事情 - 自动构建索引
     from .builder import IndexBuilder
     builder = IndexBuilder(_global_index)
-    builder.build_index()
+    builder.build_index(path)  # 传递路径参数
 
     return _global_index
 
