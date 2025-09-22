@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from .index import get_index, SearchQuery
+from .builder import handle_edit_errors
 
 
 @dataclass
@@ -35,89 +36,80 @@ class EditResult:
     files_changed: int = 0
 
 
+@handle_edit_errors
 def rename_symbol(old_name: str, new_name: str) -> EditResult:
-    """
-    符号重命名 - Linus风格直接实现
-    消除特殊情况，统一处理逻辑
-    """
-    if not _validate_symbol_name(new_name):
-        return EditResult(False, [], f"Invalid symbol name: {new_name}")
+    """重命名符号 - 跨文件操作"""
+    if not _validate_symbol_name(old_name) or not _validate_symbol_name(new_name):
+        return EditResult(False, [], "Invalid symbol name")
 
-    try:
-        index = get_index()
-        operations = []
+    index = get_index()
+    operations = []
 
-        # 查找所有引用
-        refs = index.search(SearchQuery(old_name, "symbol")).matches
+    # 查找所有引用
+    refs = index.search(SearchQuery(old_name, "symbol")).matches
 
-        for ref in refs:
-            file_path = ref.get("file")
-            if not file_path:
-                continue
+    for ref in refs:
+        file_path = ref.get("file")
+        if not file_path:
+            continue
 
-            # 直接文件操作
-            full_path = Path(index.base_path) / file_path
-            if not full_path.exists():
-                continue
-
-            # 读取原始内容
-            old_content = full_path.read_text(encoding='utf-8')
-
-            # 简单替换 - 可扩展为AST操作
-            new_content = re.sub(r'\b' + re.escape(old_name) + r'\b', new_name, old_content)
-
-            if old_content != new_content:
-                operations.append(EditOperation(
-                    file_path=str(full_path),
-                    old_content=old_content,
-                    new_content=new_content
-                ))
-
-        return EditResult(True, operations, files_changed=len(operations))
-
-    except Exception as e:
-        return EditResult(False, [], str(e))
-
-
-def add_import(file_path: str, import_statement: str) -> EditResult:
-    """添加导入 - 直接文件操作"""
-    try:
-        full_path = Path(file_path)
+        # 直接文件操作
+        full_path = Path(index.base_path) / file_path
         if not full_path.exists():
-            return EditResult(False, [], f"File not found: {file_path}")
+            continue
 
+        # 读取原始内容
         old_content = full_path.read_text(encoding='utf-8')
 
-        # 检查是否已存在
-        if import_statement in old_content:
-            return EditResult(True, [], "Import already exists")
+        # 简单替换 - 可扩展为AST操作
+        new_content = re.sub(r'\b' + re.escape(old_name) + r'\b', new_name, old_content)
 
-        # 简单添加到文件开头
-        lines = old_content.splitlines()
+        if old_content != new_content:
+            operations.append(EditOperation(
+                file_path=str(full_path),
+                old_content=old_content,
+                new_content=new_content
+            ))
 
-        # 找到导入区域
-        insert_pos = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith(('import ', 'from ')):
-                insert_pos = i + 1
+    return EditResult(True, operations, files_changed=len(operations))
 
-        lines.insert(insert_pos, import_statement)
-        new_content = '\n'.join(lines)
 
-        op = EditOperation(
-            file_path=str(full_path),
-            old_content=old_content,
-            new_content=new_content
-        )
+@handle_edit_errors
+def add_import(file_path: str, import_statement: str) -> EditResult:
+    """添加导入 - 直接文件操作"""
+    full_path = Path(file_path)
+    if not full_path.exists():
+        return EditResult(False, [], f"File not found: {file_path}")
 
-        # 立即应用编辑
-        if apply_edit(op):
-            return EditResult(True, [op], files_changed=1)
-        else:
-            return EditResult(False, [op], "Failed to write file")
+    old_content = full_path.read_text(encoding='utf-8')
 
-    except Exception as e:
-        return EditResult(False, [], str(e))
+    # 检查是否已存在
+    if import_statement in old_content:
+        return EditResult(True, [], "Import already exists")
+
+    # 简单添加到文件开头
+    lines = old_content.splitlines()
+
+    # 找到导入区域
+    insert_pos = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith(('import ', 'from ')):
+            insert_pos = i + 1
+
+    lines.insert(insert_pos, import_statement)
+    new_content = '\n'.join(lines)
+
+    op = EditOperation(
+        file_path=str(full_path),
+        old_content=old_content,
+        new_content=new_content
+    )
+
+    # 立即应用编辑
+    if apply_edit(op):
+        return EditResult(True, [op], files_changed=1)
+    else:
+        return EditResult(False, [op], "Failed to write file")
 
 
 def apply_edit(operation: EditOperation) -> bool:

@@ -54,6 +54,22 @@ def handle_mcp_errors(func: Callable) -> Callable:
             }
     return wrapper
 
+
+def handle_edit_errors(func: Callable) -> Callable:
+    """
+    编辑操作统一错误处理装饰器 - 返回EditResult格式
+    
+    Linus原则: 专门化错误处理，避免重复代码
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            from .edit import EditResult
+            return EditResult(False, [], str(e))
+    return wrapper
+
 def normalize_path(path: str, base_path: str = None) -> str:
     """
     统一路径处理 - 消除所有特殊情况
@@ -247,28 +263,37 @@ class IndexBuilder:
             'use_declaration': lambda n: self._extract_rust_use(n, content)
         }
 
-        def walk_tree(node):
+        # Linus原则: Rust符号类型注册表 - 消除分支
+        RUST_SYMBOL_TYPES = {
+            'function_item': 'functions',
+            'struct_item': 'structs', 
+            'enum_item': 'enums',
+            'trait_item': 'traits'
+        }
+
+        def process_rust_node(node):
             """统一Rust AST处理 - Good Taste实现"""
             handler = rust_handlers.get(node.type)
-            if handler:
-                result = handler(node)
-                if result:
-                    if node.type == 'use_declaration':
-                        imports.append(result)
-                    elif node.type == 'impl_item':
-                        symbols.setdefault('impls', []).append(result)
-                    else:
-                        # 通用符号处理
-                        symbol_type = {
-                            'function_item': 'functions',
-                            'struct_item': 'structs', 
-                            'enum_item': 'enums',
-                            'trait_item': 'traits'
-                        }.get(node.type)
-                        if symbol_type:
-                            symbols.setdefault(symbol_type, []).append(result)
+            if not handler:
+                return
+            
+            result = handler(node)
+            if not result:
+                return
+                
+            # Linus原则: 操作注册表消除特殊情况
+            if node.type == 'use_declaration':
+                imports.append(result)
+            elif node.type == 'impl_item':
+                symbols.setdefault('impls', []).append(result)
+            else:
+                symbol_type = RUST_SYMBOL_TYPES.get(node.type)
+                if symbol_type:
+                    symbols.setdefault(symbol_type, []).append(result)
 
-            # 递归遍历子节点
+        def walk_tree(node):
+            """Rust AST遍历 - 递归处理"""
+            process_rust_node(node)
             for child in node.children:
                 walk_tree(child)
 
