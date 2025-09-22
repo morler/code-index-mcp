@@ -6,9 +6,50 @@ import os
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional, Callable
 from .index import CodeIndex, FileInfo, SymbolInfo
 
+
+from functools import wraps
+from typing import Optional, Callable
+
+
+def safe_file_operation(func: Callable) -> Callable:
+    """
+    统一错误处理装饰器 - 消除重复模式
+    
+    Linus原则: DRY (Don't Repeat Yourself)
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> Optional[bool]:
+        try:
+            func(*args, **kwargs)
+            return True
+        except Exception:
+            # Linus原则: 静默失败，不中断整体流程
+            return None
+    return wrapper
+
+def normalize_path(path: str, base_path: str = None) -> str:
+    """
+    统一路径处理 - 消除所有特殊情况
+    
+    Linus原则: 一个函数解决所有路径问题
+    """
+    path_obj = Path(path)
+    
+    if path_obj.is_absolute():
+        return str(path_obj).replace('\\', '/')
+    
+    if base_path:
+        return str(Path(base_path) / path).replace('\\', '/')
+    
+    return str(path_obj).replace('\\', '/')
+
+
+def get_file_extension(file_path: str) -> str:
+    """获取标准化文件扩展名"""
+    return Path(file_path).suffix.lower()
 
 class IndexBuilder:
     """极简索引构建器 - 零抽象层"""
@@ -21,6 +62,40 @@ class IndexBuilder:
             '.v': self._parse_vlang,
             '.rs': self._parse_rust,
         }
+
+    # Linus原则: AST操作注册表 - 消除所有if/elif分支
+    def _process_ast_node(self, node, symbols: Dict, imports: List) -> None:
+        """统一AST节点处理 - 零分支"""
+        handler = self._get_ast_handler(type(node))
+        if handler:
+            handler(node, symbols, imports)
+
+    def _get_ast_handler(self, node_type):
+        """AST处理器注册表 - 直接查表"""
+        return {
+            ast.FunctionDef: self._extract_function,
+            ast.ClassDef: self._extract_class,
+            ast.Import: self._extract_import,
+            ast.ImportFrom: self._extract_import_from
+        }.get(node_type)
+
+    def _extract_function(self, node, symbols: Dict, imports: List) -> None:
+        """函数提取 - 专门化处理"""
+        symbols.setdefault('functions', []).append(node.name)
+
+    def _extract_class(self, node, symbols: Dict, imports: List) -> None:
+        """类提取 - 专门化处理"""
+        symbols.setdefault('classes', []).append(node.name)
+
+    def _extract_import(self, node, symbols: Dict, imports: List) -> None:
+        """导入提取 - 专门化处理"""
+        for alias in node.names:
+            imports.append(alias.name)
+
+    def _extract_import_from(self, node, symbols: Dict, imports: List) -> None:
+        """从导入提取 - 专门化处理"""
+        if node.module:
+            imports.append(node.module)
 
     def build_index(self, root_path: str = None) -> None:
         """构建索引 - 直接扫描和解析"""
@@ -47,158 +122,145 @@ class IndexBuilder:
 
     def _index_file(self, file_path: str) -> None:
         """索引单个文件 - Linus原则: 消除特殊情况"""
-        ext = Path(file_path).suffix
+        ext = get_file_extension(file_path)
         if parser := self._parsers.get(ext):
             parser(file_path)
 
+    @safe_file_operation
     def _parse_python(self, file_path: str) -> None:
-        """Python AST解析器"""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        """Python AST解析器 - Linus风格零分支"""
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            tree = ast.parse(content, filename=file_path)
-            symbols = {}
-            imports = []
+        tree = ast.parse(content, filename=file_path)
+        symbols = {}
+        imports = []
 
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    symbols.setdefault('functions', []).append(node.name)
-                elif isinstance(node, ast.ClassDef):
-                    symbols.setdefault('classes', []).append(node.name)
-                elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imports.append(alias.name)
-                elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        imports.append(node.module)
+        # Linus原则: 操作注册表消除特殊情况
+        for node in ast.walk(tree):
+            self._process_ast_node(node, symbols, imports)
 
-            file_info = FileInfo(
-                language="python",
-                line_count=len(content.splitlines()),
-                symbols=symbols,
-                imports=imports
-            )
+        file_info = FileInfo(
+            language="python",
+            line_count=len(content.splitlines()),
+            symbols=symbols,
+            imports=imports
+        )
 
-            self.index.add_file(file_path, file_info)
+        self.index.add_file(file_path, file_info)
 
-            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
-            self._register_symbols(symbols, file_path)
+        # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+        self._register_symbols(symbols, file_path)
 
-        except Exception:
-            pass
-
+    @safe_file_operation
     def _parse_vlang(self, file_path: str) -> None:
         """V语言正则表达式解析器 - 极简实现"""
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            symbols = {}
-            imports = []
+        symbols = {}
+        imports = []
 
-            # 提取函数: fn function_name 或 fn (receiver) method_name
-            for match in re.finditer(r'fn\s+(?:\([^)]*\)\s+)?(\w+)', content):
-                symbols.setdefault('functions', []).append(match.group(1))
+        # 提取函数: fn function_name 或 fn (receiver) method_name
+        for match in re.finditer(r'fn\s+(?:\([^)]*\)\s+)?(\w+)', content):
+            symbols.setdefault('functions', []).append(match.group(1))
 
-            # 提取结构体: struct StructName
-            for match in re.finditer(r'struct\s+(\w+)', content):
-                symbols.setdefault('structs', []).append(match.group(1))
+        # 提取结构体: struct StructName
+        for match in re.finditer(r'struct\s+(\w+)', content):
+            symbols.setdefault('structs', []).append(match.group(1))
 
-            # 提取接口: interface InterfaceName
-            for match in re.finditer(r'interface\s+(\w+)', content):
-                symbols.setdefault('interfaces', []).append(match.group(1))
+        # 提取接口: interface InterfaceName
+        for match in re.finditer(r'interface\s+(\w+)', content):
+            symbols.setdefault('interfaces', []).append(match.group(1))
 
-            # 提取枚举: enum EnumName
-            for match in re.finditer(r'enum\s+(\w+)', content):
-                symbols.setdefault('enums', []).append(match.group(1))
+        # 提取枚举: enum EnumName
+        for match in re.finditer(r'enum\s+(\w+)', content):
+            symbols.setdefault('enums', []).append(match.group(1))
 
-            # 提取类型别名: type TypeName =
-            for match in re.finditer(r'type\s+(\w+)\s*=', content):
-                symbols.setdefault('types', []).append(match.group(1))
+        # 提取类型别名: type TypeName =
+        for match in re.finditer(r'type\s+(\w+)\s*=', content):
+            symbols.setdefault('types', []).append(match.group(1))
 
-            # 提取导入: import module_name
-            for match in re.finditer(r'import\s+(\w+(?:\.\w+)*)', content):
-                imports.append(match.group(1))
+        # 提取导入: import module_name
+        for match in re.finditer(r'import\s+(\w+(?:\.\w+)*)', content):
+            imports.append(match.group(1))
 
-            file_info = FileInfo(
-                language="vlang",
-                line_count=len(content.splitlines()),
-                symbols=symbols,
-                imports=imports
-            )
+        file_info = FileInfo(
+            language="vlang",
+            line_count=len(content.splitlines()),
+            symbols=symbols,
+            imports=imports
+        )
 
-            self.index.add_file(file_path, file_info)
+        self.index.add_file(file_path, file_info)
 
-            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
-            self._register_symbols(symbols, file_path)
+        # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+        self._register_symbols(symbols, file_path)
 
-        except Exception:
-            pass
-
+    @safe_file_operation
     def _parse_rust(self, file_path: str) -> None:
         """Rust tree-sitter解析器 - Linus式直接AST操作"""
-        try:
-            import tree_sitter_rust as ts_rust
-            from tree_sitter import Language, Parser
+        import tree_sitter_rust as ts_rust
+        from tree_sitter import Language, Parser
 
-            RUST_LANGUAGE = Language(ts_rust.language())
-            parser = Parser(RUST_LANGUAGE)
+        RUST_LANGUAGE = Language(ts_rust.language())
+        parser = Parser(RUST_LANGUAGE)
 
-            with open(file_path, 'rb') as f:
-                content = f.read()
+        with open(file_path, 'rb') as f:
+            content = f.read()
 
-            tree = parser.parse(content)
-            symbols = {}
-            imports = []
+        tree = parser.parse(content)
+        symbols = {}
+        imports = []
 
-            # 直接遍历AST - 零抽象层
-            def walk_tree(node):
-                if node.type == 'function_item':
-                    func_name = self._extract_rust_name(node, content)
-                    if func_name:
-                        symbols.setdefault('functions', []).append(func_name)
-                elif node.type == 'struct_item':
-                    struct_name = self._extract_rust_name(node, content)
-                    if struct_name:
-                        symbols.setdefault('structs', []).append(struct_name)
-                elif node.type == 'enum_item':
-                    enum_name = self._extract_rust_name(node, content)
-                    if enum_name:
-                        symbols.setdefault('enums', []).append(enum_name)
-                elif node.type == 'trait_item':
-                    trait_name = self._extract_rust_name(node, content)
-                    if trait_name:
-                        symbols.setdefault('traits', []).append(trait_name)
-                elif node.type == 'impl_item':
-                    impl_name = self._extract_rust_impl(node, content)
-                    if impl_name:
-                        symbols.setdefault('impls', []).append(impl_name)
-                elif node.type == 'use_declaration':
-                    use_name = self._extract_rust_use(node, content)
-                    if use_name:
-                        imports.append(use_name)
+        # Linus原则: Rust AST操作注册表 - 零分支
+        rust_handlers = {
+            'function_item': lambda n: self._extract_rust_name(n, content, 'functions'),
+            'struct_item': lambda n: self._extract_rust_name(n, content, 'structs'),
+            'enum_item': lambda n: self._extract_rust_name(n, content, 'enums'),
+            'trait_item': lambda n: self._extract_rust_name(n, content, 'traits'),
+            'impl_item': lambda n: self._extract_rust_impl(n, content),
+            'use_declaration': lambda n: self._extract_rust_use(n, content)
+        }
 
-                # 递归遍历子节点
-                for child in node.children:
-                    walk_tree(child)
+        def walk_tree(node):
+            """统一Rust AST处理 - Good Taste实现"""
+            handler = rust_handlers.get(node.type)
+            if handler:
+                result = handler(node)
+                if result:
+                    if node.type == 'use_declaration':
+                        imports.append(result)
+                    elif node.type == 'impl_item':
+                        symbols.setdefault('impls', []).append(result)
+                    else:
+                        # 通用符号处理
+                        symbol_type = {
+                            'function_item': 'functions',
+                            'struct_item': 'structs', 
+                            'enum_item': 'enums',
+                            'trait_item': 'traits'
+                        }.get(node.type)
+                        if symbol_type:
+                            symbols.setdefault(symbol_type, []).append(result)
 
-            walk_tree(tree.root_node)
+            # 递归遍历子节点
+            for child in node.children:
+                walk_tree(child)
 
-            file_info = FileInfo(
-                language="rust",
-                line_count=len(content.decode('utf-8', errors='ignore').splitlines()),
-                symbols=symbols,
-                imports=imports
-            )
+        walk_tree(tree.root_node)
 
-            self.index.add_file(file_path, file_info)
+        file_info = FileInfo(
+            language="rust",
+            line_count=len(content.decode('utf-8', errors='ignore').splitlines()),
+            symbols=symbols,
+            imports=imports
+        )
 
-            # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
-            self._register_symbols(symbols, file_path)
+        self.index.add_file(file_path, file_info)
 
-        except Exception:
-            pass
+        # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
+        self._register_symbols(symbols, file_path)
 
     def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
         """将符号注册到全局索引 - Linus原则: 消除重复数据结构"""
@@ -211,8 +273,8 @@ class IndexBuilder:
                 )
                 self.index.add_symbol(symbol_name, symbol_info)
 
-    def _extract_rust_name(self, node, content: bytes) -> str:
-        """提取Rust符号名称"""
+    def _extract_rust_name(self, node, content: bytes, symbol_type: str = None) -> str:
+        """提取Rust符号名称 - 统一接口"""
         for child in node.children:
             if child.type == 'identifier':
                 return content[child.start_byte:child.end_byte].decode('utf-8', errors='ignore')
