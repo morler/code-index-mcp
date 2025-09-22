@@ -1,8 +1,11 @@
 """Linus-style core data structures."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import time
+
+if TYPE_CHECKING:
+    from .scip import SCIPSymbolManager
 
 
 @dataclass
@@ -44,6 +47,14 @@ class CodeIndex:
     base_path: str
     files: Dict[str, FileInfo]
     symbols: Dict[str, SymbolInfo]
+    scip_manager: Optional['SCIPSymbolManager'] = None  # SCIP协议支持
+
+    def __post_init__(self):
+        """初始化SCIP管理器 - Linus风格：简单直接"""
+        if self.scip_manager is None:
+            from .scip import create_scip_manager, integrate_with_code_index
+            self.scip_manager = create_scip_manager(self.base_path)
+            integrate_with_code_index(self, self.scip_manager)
 
     def search(self, query: SearchQuery) -> SearchResult:
         from .search_optimized import OptimizedSearchEngine
@@ -96,6 +107,9 @@ class CodeIndex:
         ]
         for symbol_name in symbols_to_remove:
             self.symbols.pop(symbol_name, None)
+    
+    # SCIP协议方法 - 由integrate_with_code_index添加
+    # find_scip_symbol, get_cross_references, export_scip
 
 
 _global_index: Optional[CodeIndex] = None

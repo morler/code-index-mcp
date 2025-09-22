@@ -693,14 +693,37 @@ class IndexBuilder:
 
     def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
         """将符号注册到全局索引 - Linus原则: 消除重复数据结构"""
+        language = detect_language(file_path)
+        
+        # 准备SCIP符号数据
+        scip_symbols_data = []
+        
         for symbol_type, symbol_list in symbols.items():
             for symbol_name in symbol_list:
+                # 注册到传统索引
                 symbol_info = SymbolInfo(
                     type=symbol_type,
                     file=file_path,
                     line=1  # 简化版本，后续可以优化为真实行号
                 )
                 self.index.add_symbol(symbol_name, symbol_info)
+                
+                # 准备SCIP数据
+                scip_symbols_data.append({
+                    "name": symbol_name,
+                    "type": symbol_type,
+                    "line": 1,
+                    "column": 0,
+                    "signature": None
+                })
+        
+        # 自动填充SCIP数据 - Linus风格：一次性完成所有相关操作
+        if self.index.scip_manager and scip_symbols_data:
+            try:
+                self.index.scip_manager.process_file_symbols(file_path, language, scip_symbols_data)
+            except Exception:
+                # SCIP处理失败时不影响主索引构建
+                pass
 
     def _extract_rust_name(self, node, content: bytes) -> str:
         """提取Rust符号名称 - 统一接口"""

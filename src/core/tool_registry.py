@@ -33,6 +33,13 @@ def _import_tools():
         tool_force_update_file,
         tool_get_changed_files,
         tool_full_rebuild_index,
+        # SCIP协议工具
+        tool_generate_scip_symbol_id,
+        tool_find_scip_symbol,
+        tool_get_cross_references,
+        tool_get_symbol_graph,
+        tool_export_scip_index,
+        tool_process_file_with_scip,
     )
 
     return {
@@ -58,6 +65,13 @@ def _import_tools():
         "force_update_file": tool_force_update_file,
         "get_changed_files": tool_get_changed_files,
         "full_rebuild_index": tool_full_rebuild_index,
+        # SCIP协议工具
+        "generate_scip_symbol_id": tool_generate_scip_symbol_id,
+        "find_scip_symbol": tool_find_scip_symbol,
+        "get_cross_references": tool_get_cross_references,
+        "get_symbol_graph": tool_get_symbol_graph,
+        "export_scip_index": tool_export_scip_index,
+        "process_file_with_scip": tool_process_file_with_scip,
     }
 
 

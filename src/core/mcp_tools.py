@@ -297,5 +297,217 @@ def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[
         "error": None if success else "Failed to apply edit"
     }
 
+# ----- SCIP协议工具 - Linus风格统一接口 -----
+
+@handle_mcp_errors
+def tool_generate_scip_symbol_id(symbol_name: str, file_path: str, 
+                                 language: str, symbol_type: str = "unknown") -> Dict[str, Any]:
+    """生成SCIP标准符号ID"""
+    index = get_index()
+    if not index.scip_manager:
+        return {"success": False, "error": "SCIP manager not initialized"}
+    
+    symbol_id = index.scip_manager.generate_symbol_id(
+        symbol_name, file_path, language, symbol_type
+    )
+    
+    return {
+        "success": True,
+        "symbol_id": symbol_id,
+        "symbol_name": symbol_name,
+        "file_path": file_path,
+        "language": language,
+        "symbol_type": symbol_type
+    }
+
+
+@handle_mcp_errors  
+def tool_find_scip_symbol(symbol_name: str) -> Dict[str, Any]:
+    """查找SCIP符号 - 支持重载和多定义"""
+    index = get_index()
+    if not hasattr(index, 'find_scip_symbol'):
+        return {"success": False, "error": "SCIP integration not available"}
+    
+    symbols = index.find_scip_symbol(symbol_name)
+    
+    return {
+        "success": True,
+        "symbol_name": symbol_name,
+        "matches": [
+            {
+                "symbol_id": sym.symbol_id,
+                "name": sym.name,
+                "language": sym.language,
+                "file_path": sym.file_path,
+                "line": sym.line,
+                "column": sym.column,
+                "symbol_type": sym.symbol_type,
+                "signature": sym.signature,
+                "documentation": sym.documentation
+            }
+            for sym in symbols
+        ],
+        "match_count": len(symbols)
+    }
+
+
+@handle_mcp_errors
+def tool_get_cross_references(symbol_name: str) -> Dict[str, Any]:
+    """获取符号的跨文件引用"""
+    index = get_index()
+    if not hasattr(index, 'get_cross_references'):
+        return {"success": False, "error": "SCIP integration not available"}
+    
+    cross_refs = index.get_cross_references(symbol_name)
+    
+    # 转换为JSON友好格式
+    references_by_file = {}
+    total_references = 0
+    
+    for file_path, occurrences in cross_refs.items():
+        file_refs = []
+        for occ in occurrences:
+            file_refs.append({
+                "symbol_id": occ.symbol_id,
+                "line": occ.line,
+                "column": occ.column,
+                "occurrence_type": occ.occurrence_type,
+                "context": occ.context
+            })
+        references_by_file[file_path] = file_refs
+        total_references += len(file_refs)
+    
+    return {
+        "success": True,
+        "symbol_name": symbol_name,
+        "references_by_file": references_by_file,
+        "total_references": total_references,
+        "files_with_references": len(references_by_file)
+    }
+
+
+@handle_mcp_errors
+def tool_get_symbol_graph(symbol_id: str) -> Dict[str, Any]:
+    """获取符号关系图 - 完整的依赖和引用信息"""
+    index = get_index()
+    if not index.scip_manager:
+        return {"success": False, "error": "SCIP manager not initialized"}
+    
+    graph = index.scip_manager.get_symbol_graph(symbol_id)
+    if not graph:
+        return {"success": False, "error": f"Symbol not found: {symbol_id}"}
+    
+    # 转换为JSON友好格式
+    result = {
+        "success": True,
+        "symbol_id": symbol_id,
+        "symbol": {
+            "name": graph["symbol"].name,
+            "language": graph["symbol"].language,
+            "file_path": graph["symbol"].file_path,
+            "line": graph["symbol"].line,
+            "symbol_type": graph["symbol"].symbol_type,
+            "signature": graph["symbol"].signature
+        },
+        "definitions": [
+            {
+                "file_path": def_occ.file_path,
+                "line": def_occ.line,
+                "column": def_occ.column,
+                "occurrence_type": def_occ.occurrence_type
+            }
+            for def_occ in graph["definitions"]
+        ],
+        "references": [
+            {
+                "file_path": ref_occ.file_path,
+                "line": ref_occ.line,
+                "column": ref_occ.column,
+                "occurrence_type": ref_occ.occurrence_type,
+                "context": ref_occ.context
+            }
+            for ref_occ in graph["references"]
+        ],
+        "cross_file_usage": graph["cross_file_usage"],
+        "definition_count": len(graph["definitions"]),
+        "reference_count": len(graph["references"])
+    }
+    
+    return result
+
+
+@handle_mcp_errors
+def tool_export_scip_index() -> Dict[str, Any]:
+    """导出SCIP标准格式索引"""
+    index = get_index()
+    if not hasattr(index, 'export_scip'):
+        return {"success": False, "error": "SCIP integration not available"}
+    
+    scip_index = index.export_scip()
+    
+    return {
+        "success": True,
+        "scip_index": scip_index,
+        "metadata": scip_index.get("metadata", {}),
+        "document_count": len(scip_index.get("documents", [])),
+        "external_symbols_count": len(scip_index.get("external_symbols", []))
+    }
+
+
+@handle_mcp_errors
+def tool_process_file_with_scip(file_path: str, language: str = None) -> Dict[str, Any]:
+    """使用SCIP处理单个文件的符号"""
+    index = get_index()
+    if not index.scip_manager:
+        return {"success": False, "error": "SCIP manager not initialized"}
+    
+    # 自动检测语言
+    if not language:
+        from .builder import detect_language
+        language = detect_language(file_path)
+    
+    # 从现有索引获取符号信息
+    file_info = index.get_file(file_path)
+    if not file_info:
+        return {"success": False, "error": f"File not indexed: {file_path}"}
+    
+    # 转换为SCIP格式
+    symbols_data = []
+    for symbol_name, symbol_info in index.symbols.items():
+        if symbol_info.file == file_path:
+            symbols_data.append({
+                "name": symbol_name,
+                "type": symbol_info.type,
+                "line": symbol_info.line,
+                "column": 0,  # 默认列
+                "signature": symbol_info.signature
+            })
+    
+    # 使用SCIP管理器处理
+    document = index.scip_manager.process_file_symbols(file_path, language, symbols_data)
+    
+    return {
+        "success": True,
+        "file_path": file_path,
+        "language": language,
+        "symbols_processed": len(document.symbols),
+        "occurrences_created": len(document.occurrences),
+        "external_symbols": len(document.external_symbols),
+        "document": {
+            "relative_path": document.file_path,
+            "language": document.language,
+            "symbols": [
+                {
+                    "symbol_id": sym.symbol_id,
+                    "name": sym.name,
+                    "symbol_type": sym.symbol_type,
+                    "line": sym.line,
+                    "signature": sym.signature
+                }
+                for sym in document.symbols
+            ]
+        }
+    }
+
 
 # 工具注册表已移至tool_registry.py以保持文件<200行原则
