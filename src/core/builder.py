@@ -5,6 +5,7 @@ Linus-style index builder - 直接数据操作
 import os
 import ast
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Callable
 from .index import CodeIndex, FileInfo, SymbolInfo
@@ -565,11 +566,45 @@ class IndexBuilder:
             except Exception:
                 return
 
-        # 解析AST
+        # Phase 4: 符号缓存检查 - 90%+符号复用率目标
+        import hashlib
+        content_hash = hashlib.md5(content).hexdigest()
+        
         try:
-            tree = parser.parse(content)
+            from .symbol_cache import get_cached_file_symbols
+            cached_result = get_cached_file_symbols(file_path, content_hash, language)
+            if cached_result:
+                symbols, file_info, scip_data = cached_result
+                # 直接使用缓存结果
+                self.index.add_file(file_path, file_info)
+                self._register_symbols(symbols, file_path)
+                return
+        except ImportError:
+            pass
+
+        # 缓存未命中 - 执行完整符号提取
+        extraction_start = time.time()
+
+        # Phase 4: 缓存解析AST - 80%+复用率目标
+        tree = None
+        try:
+            from .tree_sitter_cache import get_cached_tree
+            tree = get_cached_tree(file_path, content, language, parser)
+        except ImportError:
+            pass
         except Exception:
-            return
+            pass
+
+        # 缓存未命中时直接解析并缓存结果
+        if not tree:
+            tree = parser.parse(content)
+            # 立即缓存新解析的tree - 确保后续访问命中缓存
+            try:
+                from .tree_sitter_cache import get_tree_cache
+                cache = get_tree_cache()
+                cache._cache_parsed_tree(file_path, cache._calculate_content_hash(content), tree, language, 0.0)
+            except:
+                pass
 
         symbols = {}
         imports = []
@@ -611,6 +646,27 @@ class IndexBuilder:
         
         # Linus原则: 一次性完成所有相关操作 - 添加符号到全局索引
         self._register_symbols(symbols, file_path)
+
+        # Phase 4: 缓存符号提取结果 - 90%+复用率目标
+        try:
+            from .symbol_cache import cache_file_symbols
+            extraction_time = time.time() - extraction_start
+            
+            # 准备SCIP数据用于缓存
+            scip_data = []
+            for symbol_type, symbol_list in symbols.items():
+                for symbol_name in symbol_list:
+                    scip_data.append({
+                        "name": symbol_name,
+                        "type": symbol_type,
+                        "line": 1,
+                        "column": 0,
+                        "signature": None
+                    })
+            
+            cache_file_symbols(file_path, content_hash, language, symbols, file_info, scip_data, extraction_time)
+        except ImportError:
+            pass
 
     def _get_language_operations(self, language: str) -> Dict[str, tuple]:
         """

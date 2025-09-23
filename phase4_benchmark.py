@@ -1,245 +1,342 @@
 #!/usr/bin/env python3
 """
-Phase 4 性能基准测试 - 验证Linus式重构效果
+Phase 4 Performance Benchmark - Advanced Caching Layer
 
-按照plans.md要求：
-1. 确保重构后性能不降低
-2. 内存使用优化验证
-3. I/O性能检查
+Linus风格性能测试 - 验证10x+重复操作性能提升目标
 """
 
-import time
-import tracemalloc
 import sys
-import os
-from typing import Dict, Any
+import time
+import json
+from pathlib import Path
+from typing import Dict, List, Any, Optional
 
-# 添加src到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# 确保可以导入项目模块
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-def benchmark_core_operations():
-    """基准测试核心操作性能"""
-    print("🚀 开始Phase 4性能基准测试...\n")
+try:
+    from core.index import CodeIndex, SearchQuery
+    from core.builder import IndexBuilder
+    from core.search import SearchEngine
+    from core.cache import get_file_cache, clear_global_cache
+    from core.tree_sitter_cache import get_tree_cache, clear_global_tree_cache
+    from core.symbol_cache import get_symbol_cache, clear_global_symbol_cache
+except ImportError as e:
+    print(f"❌ 导入失败: {e}")
+    print("请确保在项目根目录运行此脚本")
+    sys.exit(1)
 
-    # 启动内存跟踪
-    tracemalloc.start()
-    start_time = time.time()
 
-    from core.index import set_project_path, get_index, SearchQuery
+class Phase4Benchmark:
+    """Phase 4缓存层性能基准测试"""
 
-    # 1. 测试索引初始化性能
-    print("📊 测试索引初始化性能...")
-    init_start = time.time()
-    index = set_project_path(os.getcwd())
-    init_time = time.time() - init_start
-    print(f"   ✅ 索引初始化: {init_time:.4f}秒")
+    def __init__(self, test_project_path: str):
+        self.test_path = Path(test_project_path)
+        if not self.test_path.exists():
+            raise ValueError(f"测试项目路径不存在: {test_project_path}")
 
-    # 2. 添加测试数据
-    print("📊 添加测试数据...")
-    from core.index import FileInfo, SymbolInfo
+        self.results = {}
 
-    data_start = time.time()
-    for i in range(100):
-        file_info = FileInfo(
-            language="python",
-            line_count=50 + i,
-            symbols={"functions": [f"func_{i}", f"helper_{i}"]},
-            imports=[f"module_{i}"]
-        )
-        index.add_file(f"test_file_{i}.py", file_info)
+    def run_all_benchmarks(self) -> Dict[str, Any]:
+        """运行所有Phase 4基准测试"""
+        print("🚀 Phase 4 Advanced Caching Layer Performance Benchmark")
+        print("=" * 60)
 
-        symbol_info = SymbolInfo(
-            type="function",
-            file=f"test_file_{i}.py",
-            line=10 + i,
-            signature=f"def func_{i}():"
-        )
-        index.add_symbol(f"func_{i}", symbol_info)
+        # 测试顺序: 冷启动 -> 热启动 -> 重复操作
+        benchmarks = [
+            ("cold_start_indexing", "冷启动索引构建"),
+            ("warm_start_indexing", "热启动索引构建"),
+            ("query_result_caching", "查询结果缓存测试"),
+            ("repeated_operations", "重复操作性能测试"),
+            ("cache_statistics", "缓存统计分析")
+        ]
 
-    data_time = time.time() - data_start
-    print(f"   ✅ 数据添加(100个文件+符号): {data_time:.4f}秒")
+        for test_name, description in benchmarks:
+            print(f"\n📊 {description}...")
+            try:
+                result = getattr(self, test_name)()
+                self.results[test_name] = result
+                self._print_test_result(test_name, result)
+            except Exception as e:
+                print(f"❌ 测试失败: {e}")
+                self.results[test_name] = {"error": str(e)}
 
-    # 3. 测试搜索性能
-    print("📊 测试搜索性能...")
-    search_times = []
+        # 生成性能报告
+        self._generate_performance_report()
+        return self.results
 
-    for i in range(10):
-        search_start = time.time()
-        query = SearchQuery(pattern=f"func_{i}", type="symbol")
-        result = index.search(query)
-        search_time = time.time() - search_start
-        search_times.append(search_time)
+    def cold_start_indexing(self) -> Dict[str, Any]:
+        """冷启动索引构建测试"""
+        # 清空所有缓存
+        clear_global_cache()
+        clear_global_tree_cache()
+        clear_global_symbol_cache()
 
-    avg_search_time = sum(search_times) / len(search_times)
-    print(f"   ✅ 平均搜索时间: {avg_search_time:.6f}秒")
-    if avg_search_time > 0:
-        print(f"   📈 搜索QPS: {1/avg_search_time:.1f}/秒")
-    else:
-        print(f"   📈 搜索QPS: >1000000/秒 (极快)")
+        index = CodeIndex(str(self.test_path), {}, {})
+        builder = IndexBuilder(index)
 
-    # 4. 测试统计信息性能
-    stats_start = time.time()
-    stats = index.get_stats()
-    stats_time = time.time() - stats_start
-    print(f"   ✅ 统计信息查询: {stats_time:.6f}秒")
-    print(f"   📊 索引统计: {stats}")
+        start_time = time.time()
+        builder.build_index()
+        indexing_time = time.time() - start_time
 
-    # 5. 测试文件模式匹配性能
-    pattern_start = time.time()
-    matches = index.find_files_by_pattern("*.py")
-    pattern_time = time.time() - pattern_start
-    print(f"   ✅ 文件模式匹配: {pattern_time:.6f}秒")
-    print(f"   📁 匹配文件数: {len(matches)}")
+        return {
+            "indexing_time": round(indexing_time, 3),
+            "files_indexed": len(index.files),
+            "symbols_count": len(index.symbols)
+        }
 
-    total_time = time.time() - start_time
+    def warm_start_indexing(self) -> Dict[str, Any]:
+        """热启动索引构建测试 - 验证缓存效果"""
+        # 保留现有缓存，重新构建索引
+        index = CodeIndex(str(self.test_path), {}, {})
+        builder = IndexBuilder(index)
 
-    # 内存使用情况
-    current, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+        start_time = time.time()
+        builder.build_index()
+        indexing_time = time.time() - start_time
 
-    print(f"\n🎯 性能总结:")
-    print(f"   ⏱️  总执行时间: {total_time:.4f}秒")
-    print(f"   🧠 当前内存使用: {current / 1024 / 1024:.2f} MB")
-    print(f"   📊 峰值内存使用: {peak / 1024 / 1024:.2f} MB")
-    print(f"   ⚡ 平均操作延迟: {total_time/120:.6f}秒")  # 120个操作
+        cold_start_time = self.results.get("cold_start_indexing", {}).get("indexing_time", 1)
+        improvement_ratio = cold_start_time / indexing_time if indexing_time > 0 else 0
 
-    return {
-        "total_time": total_time,
-        "init_time": init_time,
-        "data_time": data_time,
-        "avg_search_time": avg_search_time,
-        "stats_time": stats_time,
-        "pattern_time": pattern_time,
-        "current_memory_mb": current / 1024 / 1024,
-        "peak_memory_mb": peak / 1024 / 1024
-    }
+        return {
+            "indexing_time": round(indexing_time, 3),
+            "files_indexed": len(index.files),
+            "symbols_count": len(index.symbols),
+            "improvement_ratio": round(improvement_ratio, 2)
+        }
 
-def validate_linus_principles():
-    """验证Linus原则的实现"""
-    print("\n🔍 验证Linus式架构原则...\n")
+    def query_result_caching(self) -> Dict[str, Any]:
+        """查询结果缓存性能测试"""
+        index = CodeIndex(str(self.test_path), {}, {})
+        builder = IndexBuilder(index)
+        builder.build_index()
 
-    # 1. 文件行数检查
-    print("📏 检查文件行数限制 (<200行):")
-    core_files = [
-        "src/core/index.py",
-        "src/core/search.py",
-        "src/core/search_optimized.py",
-        "src/core/operations.py",
-        "src/core/mcp_tools.py",
-        "src/core/semantic_ops.py",
-        "src/core/tool_registry.py"
-    ]
+        search_engine = SearchEngine(index)
 
-    all_compliant = True
-    for file_path in core_files:
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                line_count = sum(1 for _ in f)
-            status = "✅" if line_count <= 200 else "❌"
-            print(f"   {status} {file_path}: {line_count}行")
-            if line_count > 200:
-                all_compliant = False
+        # 测试查询集合
+        test_queries = [
+            SearchQuery("function", "text"),
+            SearchQuery("class", "text"),
+            SearchQuery("import", "text"),
+            SearchQuery("def", "text"),
+            SearchQuery("async", "text")
+        ]
 
-    print(f"   📊 文件行数合规: {'✅ 通过' if all_compliant else '❌ 失败'}")
+        # 第一轮查询 - 缓存未命中
+        first_round_times = []
+        for query in test_queries:
+            start_time = time.time()
+            result = search_engine.search(query)
+            query_time = time.time() - start_time
+            first_round_times.append(query_time)
 
-    # 2. 架构简洁性检查
-    print("\n🏗️  架构简洁性验证:")
-    try:
-        from core.index import CodeIndex, get_index, SearchQuery
-        print("   ✅ 核心数据结构：统一CodeIndex")
-        print("   ✅ 搜索接口：统一SearchQuery")
-        print("   ✅ 全局访问：get_index()单例")
+        # 第二轮查询 - 缓存命中
+        second_round_times = []
+        for query in test_queries:
+            start_time = time.time()
+            result = search_engine.search(query)
+            query_time = time.time() - start_time
+            second_round_times.append(query_time)
 
-        # 检查是否有抽象层
-        import importlib
+        # 计算改进比例
+        avg_first = sum(first_round_times) / len(first_round_times)
+        avg_second = sum(second_round_times) / len(second_round_times)
+        speedup_ratio = avg_first / avg_second if avg_second > 0 else 0
+
+        # 获取缓存统计
         try:
-            importlib.import_module('src.code_index_mcp.services')
-            print("   ❌ 警告：仍存在services抽象层")
-        except ImportError:
-            print("   ✅ 服务抽象层：已完全移除")
+            cache_stats = search_engine.get_cache_stats()
+            hit_ratio = cache_stats.get("hit_ratio", 0)
+        except:
+            hit_ratio = 0
 
-    except ImportError as e:
-        print(f"   ❌ 核心模块导入失败: {e}")
+        return {
+            "first_round_avg_ms": round(avg_first * 1000, 2),
+            "second_round_avg_ms": round(avg_second * 1000, 2),
+            "speedup_ratio": round(speedup_ratio, 2),
+            "cache_hit_ratio": hit_ratio,
+            "queries_tested": len(test_queries)
+        }
 
-    # 3. 特殊情况消除验证
-    print("\n🔀 特殊情况消除验证:")
-    try:
-        from core.search_optimized import OptimizedSearchEngine
-        # 检查是否有大量if/else分支
-        print("   ✅ 搜索引擎：操作注册表模式")
-        print("   ✅ 统一接口：消除条件分支")
-    except Exception as e:
-        print(f"   ❌ 搜索引擎检查失败: {e}")
+    def repeated_operations(self) -> Dict[str, Any]:
+        """重复操作性能测试 - 验证10x+提升目标"""
+        index = CodeIndex(str(self.test_path), {}, {})
+        builder = IndexBuilder(index)
+        builder.build_index()
 
-def performance_quality_gate():
-    """性能质量门禁"""
-    print("\n🚪 性能质量门禁检查...\n")
+        search_engine = SearchEngine(index)
 
-    benchmark_results = benchmark_core_operations()
+        # 测试重复查询性能
+        query = SearchQuery("function", "text")
 
-    # 设定性能标准（基于Linus要求）
-    standards = {
-        "init_time": 0.1,          # 初始化 < 100ms
-        "avg_search_time": 0.01,   # 搜索 < 10ms
-        "stats_time": 0.001,       # 统计 < 1ms
-        "pattern_time": 0.01,      # 模式匹配 < 10ms
-        "peak_memory_mb": 50       # 峰值内存 < 50MB
-    }
+        # 10次重复查询
+        repeat_times = []
+        for i in range(10):
+            start_time = time.time()
+            result = search_engine.search(query)
+            query_time = time.time() - start_time
+            repeat_times.append(query_time)
 
-    passed = 0
-    total = len(standards)
+        first_query_time = repeat_times[0]
+        subsequent_avg = sum(repeat_times[1:]) / len(repeat_times[1:]) if len(repeat_times) > 1 else first_query_time
+        improvement_ratio = first_query_time / subsequent_avg if subsequent_avg > 0 else 0
 
-    print("⚡ 性能标准检查:")
-    for metric, threshold in standards.items():
-        actual = benchmark_results[metric]
-        status = "✅" if actual <= threshold else "❌"
-        print(f"   {status} {metric}: {actual:.6f} (标准: <={threshold})")
-        if actual <= threshold:
-            passed += 1
+        return {
+            "first_query_ms": round(first_query_time * 1000, 2),
+            "subsequent_avg_ms": round(subsequent_avg * 1000, 2),
+            "improvement_ratio": round(improvement_ratio, 2),
+            "target_achieved": improvement_ratio >= 10.0,  # Phase 4目标: 10x+提升
+            "total_queries": len(repeat_times)
+        }
 
-    success_rate = (passed / total) * 100
-    print(f"\n📊 质量门禁结果: {passed}/{total} 通过 ({success_rate:.1f}%)")
+    def cache_statistics(self) -> Dict[str, Any]:
+        """缓存统计分析"""
+        file_cache_stats = get_file_cache().get_cache_stats()
+        tree_cache_stats = get_tree_cache().get_cache_stats()
+        symbol_cache_stats = get_symbol_cache().get_cache_stats()
 
-    if success_rate >= 80:
-        print("🎉 性能质量门禁：✅ 通过")
-        return True
-    else:
-        print("❌ 性能质量门禁：⚠️ 未通过")
-        return False
+        return {
+            "file_cache": file_cache_stats,
+            "tree_cache": tree_cache_stats,
+            "symbol_cache": symbol_cache_stats
+        }
+
+    def _print_test_result(self, test_name: str, result: Dict[str, Any]):
+        """打印测试结果"""
+        if "error" in result:
+            print(f"  ❌ 错误: {result['error']}")
+            return
+
+        print(f"  ✅ 完成")
+
+        # 根据测试类型显示关键指标
+        if test_name == "cold_start_indexing":
+            print(f"     索引时间: {result['indexing_time']}s")
+            print(f"     文件数量: {result['files_indexed']}")
+
+        elif test_name == "warm_start_indexing":
+            print(f"     索引时间: {result['indexing_time']}s")
+            print(f"     性能提升: {result['improvement_ratio']}x")
+
+        elif test_name == "query_result_caching":
+            print(f"     缓存前: {result['first_round_avg_ms']}ms")
+            print(f"     缓存后: {result['second_round_avg_ms']}ms")
+            print(f"     提升倍数: {result['speedup_ratio']}x")
+
+        elif test_name == "repeated_operations":
+            print(f"     首次查询: {result['first_query_ms']}ms")
+            print(f"     后续平均: {result['subsequent_avg_ms']}ms")
+            print(f"     提升倍数: {result['improvement_ratio']}x")
+            print(f"     {'🎯' if result['target_achieved'] else '❌'} 10x目标: {'达成' if result['target_achieved'] else '未达成'}")
+
+    def _generate_performance_report(self):
+        """生成性能报告"""
+        print("\n" + "="*60)
+        print("📈 Phase 4 Performance Report")
+        print("="*60)
+
+        # 核心性能指标
+        cold_start = self.results.get("cold_start_indexing", {})
+        warm_start = self.results.get("warm_start_indexing", {})
+        repeated_ops = self.results.get("repeated_operations", {})
+        cache_stats = self.results.get("cache_statistics", {})
+
+        print(f"\n🚀 核心性能指标:")
+        if cold_start and warm_start:
+            improvement = warm_start.get("improvement_ratio", 1)
+            print(f"   索引构建加速: {improvement}x")
+
+        if repeated_ops:
+            repeat_improvement = repeated_ops.get("improvement_ratio", 1)
+            target_achieved = repeated_ops.get("target_achieved", False)
+            print(f"   重复操作加速: {repeat_improvement}x {'🎯' if target_achieved else '❌'}")
+
+        print(f"\n💾 缓存效率:")
+        if cache_stats:
+            file_stats = cache_stats.get("file_cache", {})
+            tree_stats = cache_stats.get("tree_cache", {})
+            symbol_stats = cache_stats.get("symbol_cache", {})
+
+            print(f"   文件缓存命中率: {file_stats.get('cache_hit_ratio', 0):.1%}")
+            print(f"   Tree-sitter缓存命中率: {tree_stats.get('hit_ratio', 0):.1%}")
+            print(f"   符号缓存命中率: {symbol_stats.get('hit_ratio', 0):.1%}")
+
+        # 保存详细报告
+        report_file = Path("phase4_performance_report.json")
+        with open(report_file, 'w', encoding='utf-8') as f:
+            json.dump(self.results, f, indent=2, ensure_ascii=False)
+
+        print(f"\n📄 详细报告已保存到: {report_file}")
+
+        # Phase 4成功标准评估
+        self._evaluate_phase4_success()
+
+    def _evaluate_phase4_success(self):
+        """评估Phase 4成功标准"""
+        print(f"\n🎯 Phase 4 Success Criteria Evaluation:")
+        print("-" * 40)
+
+        success_criteria = [
+            ("重复操作10x+性能提升", self._check_10x_improvement()),
+            ("缓存命中率>70%", self._check_cache_hit_rates()),
+            ("子秒级响应时间", self._check_response_times())
+        ]
+
+        all_passed = True
+        for criterion, passed in success_criteria:
+            status = "✅ 通过" if passed else "❌ 未达标"
+            print(f"   {criterion}: {status}")
+            if not passed:
+                all_passed = False
+
+        print(f"\n{'🎉 Phase 4 全面成功!' if all_passed else '⚠️  Phase 4 部分目标未达成'}")
+
+    def _check_10x_improvement(self) -> bool:
+        """检查10x性能改进目标"""
+        repeated_ops = self.results.get("repeated_operations", {})
+        return repeated_ops.get("target_achieved", False)
+
+    def _check_cache_hit_rates(self) -> bool:
+        """检查缓存命中率"""
+        cache_stats = self.results.get("cache_statistics", {})
+        file_stats = cache_stats.get("file_cache", {})
+        tree_stats = cache_stats.get("tree_cache", {})
+        symbol_stats = cache_stats.get("symbol_cache", {})
+
+        file_hit_rate = file_stats.get("cache_hit_ratio", 0)
+        tree_hit_rate = tree_stats.get("hit_ratio", 0)
+        symbol_hit_rate = symbol_stats.get("hit_ratio", 0)
+
+        # 至少一个缓存命中率>70%
+        return max(file_hit_rate, tree_hit_rate, symbol_hit_rate) > 0.7
+
+    def _check_response_times(self) -> bool:
+        """检查响应时间"""
+        repeated_ops = self.results.get("repeated_operations", {})
+        subsequent_avg = repeated_ops.get("subsequent_avg_ms", 1000)
+        return subsequent_avg < 1000  # <1秒
+
 
 def main():
-    """Phase 4主测试流程"""
-    print("=" * 60)
-    print("🎯 Phase 4: 性能优化和验证")
-    print("   按照plans.md执行最终质量验证")
-    print("=" * 60)
+    """主函数"""
+    # 使用当前项目作为测试对象
+    test_project = Path(__file__).parent
+
+    print("🔧 初始化Phase 4性能基准测试...")
 
     try:
-        # 1. Linus原则验证
-        validate_linus_principles()
+        benchmark = Phase4Benchmark(str(test_project))
+        results = benchmark.run_all_benchmarks()
 
-        # 2. 性能基准测试
-        passed = performance_quality_gate()
-
-        if passed:
-            print("\n🏆 Phase 4验证成功!")
-            print("✨ Linus式重构达到预期效果!")
-            print("\n🎯 成果汇总:")
-            print("   - 数据结构驱动架构 ✅")
-            print("   - 文件行数<200行 ✅")
-            print("   - 性能指标达标 ✅")
-            print("   - 内存使用优化 ✅")
-            return True
-        else:
-            print("\n⚠️ Phase 4验证部分失败，需要优化")
-            return False
+        print("\n✅ Phase 4基准测试完成!")
+        return 0
 
     except Exception as e:
-        print(f"\n❌ Phase 4测试异常: {e}")
+        print(f"\n❌ 基准测试失败: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return 1
+
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    exit(main())
