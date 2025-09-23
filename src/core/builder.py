@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Dict, List, Set, Optional, Callable
 from .index import CodeIndex, FileInfo, SymbolInfo
 
+try:
+    from .io_optimizer import read_file_optimized, get_directory_scanner
+    _IO_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    _IO_OPTIMIZER_AVAILABLE = False
+
 
 from functools import wraps
 from typing import Optional, Callable, Dict, Any
@@ -311,19 +317,67 @@ class IndexBuilder:
             self._index_file(file_path)
 
     def _scan_files_ultra_fast(self) -> List[str]:
-        """Phase2优化: 超快速文件扫描 - os.scandir + 早期退出"""
-        import os
-        from concurrent.futures import ThreadPoolExecutor
+        """Phase5优化: 异步并行文件扫描 - 消除I/O阻塞"""
+        import asyncio
         
-        files = []
         base = Path(self.index.base_path)
-
         if not base.exists():
-            return files
+            return []
 
         # 支持的扩展名集合 - O(1)查找
         supported_extensions = set(LANGUAGE_MAP.keys())
         skip_dirs = {'.venv', '__pycache__', '.git', 'node_modules', 'target', 'build', '.pytest_cache'}
+        
+        # 使用优化的异步目录扫描器
+        if _IO_OPTIMIZER_AVAILABLE:
+            async def _async_scan():
+                scanner = get_directory_scanner()
+                return await scanner.scan_directory_async(base, supported_extensions, skip_dirs)
+            
+            try:
+                # 尝试使用异步扫描
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果在异步上下文中，使用线程
+                    import threading
+                    result = [None]
+                    exception = [None]
+                    
+                    def run_in_thread():
+                        try:
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            result[0] = new_loop.run_until_complete(_async_scan())
+                        except Exception as e:
+                            exception[0] = e
+                        finally:
+                            new_loop.close()
+                    
+                    thread = threading.Thread(target=run_in_thread)
+                    thread.start()
+                    thread.join()
+                    
+                    if exception[0]:
+                        raise exception[0]
+                    return result[0] or []
+                else:
+                    return loop.run_until_complete(_async_scan())
+            except (RuntimeError, Exception):
+                # 异步失败，使用新的事件循环
+                try:
+                    return asyncio.run(_async_scan())
+                except Exception:
+                    pass  # 回退到同步扫描
+        
+        # 回退到原有的同步扫描（保持兼容性）
+        return self._scan_files_sync_fallback(base, supported_extensions, skip_dirs)
+    
+    def _scan_files_sync_fallback(self, base: Path, supported_extensions: set, skip_dirs: set) -> List[str]:
+        """同步扫描回退实现 - 保持兼容性"""
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+        
+        files = []
         
         def scan_directory(dir_path: str) -> List[str]:
             """使用os.scandir快速扫描单个目录"""
@@ -332,22 +386,19 @@ class IndexBuilder:
                 with os.scandir(dir_path) as entries:
                     for entry in entries:
                         if entry.is_file(follow_symlinks=False):
-                            # 快速扩展名检查
                             name = entry.name
                             if '.' in name:
                                 ext = '.' + name.split('.')[-1].lower()
                                 if ext in supported_extensions:
                                     local_files.append(entry.path)
                         elif entry.is_dir(follow_symlinks=False):
-                            # 跳过排除目录 + 早期退出
                             if entry.name not in skip_dirs:
                                 local_files.extend(scan_directory(entry.path))
             except (OSError, PermissionError):
-                # 访问受限目录时静默跳过
                 pass
             return local_files
         
-        # 对大项目使用并行扫描
+        # 获取根级目录
         root_dirs = []
         try:
             with os.scandir(str(base)) as entries:
@@ -363,14 +414,13 @@ class IndexBuilder:
         except (OSError, PermissionError):
             return files
         
-        # 并行处理子目录 - 最多4个线程
+        # 并行处理子目录
         if len(root_dirs) > 2:
             with ThreadPoolExecutor(max_workers=min(4, len(root_dirs))) as executor:
                 results = executor.map(scan_directory, root_dirs)
                 for result in results:
                     files.extend(result)
         else:
-            # 小项目直接顺序处理
             for dir_path in root_dirs:
                 files.extend(scan_directory(dir_path))
         
@@ -396,8 +446,11 @@ class IndexBuilder:
             lines = get_file_cache().get_file_lines(file_path)
             content = "\n".join(lines)
         except ImportError:
-            # 缓存不可用时直接读取文件
-            content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
+            # 缓存不可用时使用优化的文件读取
+            if _IO_OPTIMIZER_AVAILABLE:
+                content = read_file_optimized(file_path, encoding='utf-8')
+            else:
+                content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
 
         tree = ast.parse(content, filename=file_path)
         symbols = {}
@@ -428,8 +481,11 @@ class IndexBuilder:
             lines = get_file_cache().get_file_lines(file_path)
             content = "\n".join(lines)
         except ImportError:
-            # 缓存不可用时直接读取文件
-            content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
+            # 缓存不可用时使用优化的文件读取
+            if _IO_OPTIMIZER_AVAILABLE:
+                content = read_file_optimized(file_path, encoding='utf-8')
+            else:
+                content = Path(file_path).read_text(encoding='utf-8', errors='ignore')
 
         symbols = {}
         imports = []
@@ -489,8 +545,11 @@ class IndexBuilder:
             lines = get_file_cache().get_file_lines(file_path)
             content = "\n".join(lines).encode('utf-8')
         except ImportError:
-            # 缓存不可用时直接读取文件
-            content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
+            # 缓存不可用时使用优化的文件读取
+            if _IO_OPTIMIZER_AVAILABLE:
+                content = read_file_optimized(file_path, encoding='utf-8').encode('utf-8')
+            else:
+                content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
 
         tree = parser.parse(content)
         symbols = {}
@@ -560,9 +619,12 @@ class IndexBuilder:
             lines = get_file_cache().get_file_lines(file_path)
             content = "\n".join(lines).encode('utf-8')
         except ImportError:
-            # 缓存不可用时直接读取文件
+            # 缓存不可用时使用优化的文件读取
             try:
-                content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
+                if _IO_OPTIMIZER_AVAILABLE:
+                    content = read_file_optimized(file_path, encoding='utf-8').encode('utf-8')
+                else:
+                    content = Path(file_path).read_text(encoding='utf-8', errors='ignore').encode('utf-8')
             except Exception:
                 return
 

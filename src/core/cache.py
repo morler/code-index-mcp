@@ -14,7 +14,18 @@ from pathlib import Path
 import xxhash
 import time
 import weakref
-import psutil
+
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
+
+try:
+    from .io_optimizer import read_file_optimized, read_file_lines_optimized
+    _IO_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    _IO_OPTIMIZER_AVAILABLE = False
 
 
 def _calculate_smart_cache_size() -> Tuple[int, int]:
@@ -25,21 +36,25 @@ def _calculate_smart_cache_size() -> Tuple[int, int]:
         Tuple[max_files, max_memory_mb] - 缓存文件数和内存限制
     """
     try:
-        # 获取系统内存信息
-        memory = psutil.virtual_memory()
-        total_memory_gb = memory.total / (1024 ** 3)
-        
-        # Linus原则: 400 files per GB of system RAM
-        max_files = int(400 * total_memory_gb)
-        
-        # 最大内存使用: 20% of total system memory
-        max_memory_mb = int((memory.total * 0.2) / (1024 * 1024))
-        
-        # 安全下限和上限
-        max_files = max(100, min(max_files, 5000))  # 100-5000文件
-        max_memory_mb = max(50, min(max_memory_mb, 2048))  # 50MB-2GB
-        
-        return max_files, max_memory_mb
+        if _PSUTIL_AVAILABLE:
+            # 获取系统内存信息
+            memory = psutil.virtual_memory()
+            total_memory_gb = memory.total / (1024 ** 3)
+            
+            # Linus原则: 400 files per GB of system RAM
+            max_files = int(400 * total_memory_gb)
+            
+            # 最大内存使用: 20% of total system memory
+            max_memory_mb = int((memory.total * 0.2) / (1024 * 1024))
+            
+            # 安全下限和上限
+            max_files = max(100, min(max_files, 5000))  # 100-5000文件
+            max_memory_mb = max(50, min(max_memory_mb, 2048))  # 50MB-2GB
+            
+            return max_files, max_memory_mb
+        else:
+            # psutil不可用时的回退设置
+            return 1000, 100
         
     except Exception:
         # 安全回退 - 保守设置
@@ -164,11 +179,16 @@ class OptimizedFileCache:
         return self._calculate_file_hash_ultra_fast(file_path)
 
     def _load_file(self, file_path: str) -> None:
-        """加载文件到缓存 - 原子操作"""
+        """加载文件到缓存 - 原子操作 + I/O优化"""
         try:
-            path = Path(file_path)
-            content = path.read_text(encoding='utf-8', errors='ignore')
-            lines = content.splitlines()
+            # 使用优化的文件读取
+            if _IO_OPTIMIZER_AVAILABLE:
+                lines = read_file_lines_optimized(file_path, encoding='utf-8')
+            else:
+                # 回退到标准读取
+                path = Path(file_path)
+                content = path.read_text(encoding='utf-8', errors='ignore')
+                lines = content.splitlines()
             
             # 移除旧缓存
             self._remove_from_cache(file_path)
@@ -225,16 +245,17 @@ class OptimizedFileCache:
     def _check_system_memory_pressure(self) -> None:
         """检查系统内存压力并采取行动"""
         try:
-            memory = psutil.virtual_memory()
-            available_percent = (memory.available / memory.total) * 100
-            
-            # 系统内存严重不足时紧急清理
-            if available_percent < 10:  # 可用内存 < 10%
-                self._emergency_cleanup()
-                self._emergency_cleanups += 1
-            elif available_percent < 20:  # 可用内存 < 20%
-                self._aggressive_cleanup()
-                self._memory_warnings += 1
+            if _PSUTIL_AVAILABLE:
+                memory = psutil.virtual_memory()
+                available_percent = (memory.available / memory.total) * 100
+                
+                # 系统内存严重不足时紧急清理
+                if available_percent < 10:  # 可用内存 < 10%
+                    self._emergency_cleanup()
+                    self._emergency_cleanups += 1
+                elif available_percent < 20:  # 可用内存 < 20%
+                    self._aggressive_cleanup()
+                    self._memory_warnings += 1
                 
         except Exception:
             # psutil失败时忽略，继续正常运行
@@ -426,9 +447,12 @@ class OptimizedFileCache:
         
         # 系统内存信息
         try:
-            memory = psutil.virtual_memory()
-            system_memory_mb = memory.total / (1024 * 1024)
-            system_available_mb = memory.available / (1024 * 1024)
+            if _PSUTIL_AVAILABLE:
+                memory = psutil.virtual_memory()
+                system_memory_mb = memory.total / (1024 * 1024)
+                system_available_mb = memory.available / (1024 * 1024)
+            else:
+                system_memory_mb = system_available_mb = 0
         except:
             system_memory_mb = system_available_mb = 0
         
