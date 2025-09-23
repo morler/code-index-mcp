@@ -28,6 +28,7 @@ dependencies = [
     "xxhash>=3.0.0",
     "tree-sitter-python>=0.25.0",
     "tree-sitter-go>=0.25.0",
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
