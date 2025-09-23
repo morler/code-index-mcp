@@ -821,16 +821,32 @@ class IndexBuilder:
         return operations
 
     def _extract_tree_sitter_name(self, node, content: bytes) -> Optional[str]:
-        """从tree-sitter节点提取名称"""
+        """从tree-sitter节点提取名称 - Linus风格递归搜索"""
         try:
-            # 查找identifier子节点
-            for child in node.children:
-                if child.type == 'identifier':
-                    start_byte = child.start_byte
-                    end_byte = child.end_byte
+            # Linus原则: 递归搜索identifier，处理所有可能的嵌套结构
+            def find_name_recursive(current_node, depth=0):
+                if depth > 3:  # 防止过深递归
+                    return None
+
+                # C语言特定的名称节点类型
+                name_node_types = {'identifier', 'type_identifier', 'field_identifier'}
+
+                if current_node.type in name_node_types:
+                    start_byte = current_node.start_byte
+                    end_byte = current_node.end_byte
                     name = content[start_byte:end_byte].decode('utf-8', errors='ignore')
                     return name.strip() if name else None
-            return None
+
+                # 递归搜索子节点
+                for child in current_node.children:
+                    result = find_name_recursive(child, depth + 1)
+                    if result:
+                        return result
+
+                return None
+
+            return find_name_recursive(node)
+
         except Exception:
             return None
 
