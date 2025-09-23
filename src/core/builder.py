@@ -309,25 +309,75 @@ class IndexBuilder:
         for file_path in self._scan_files():
             self._index_file(file_path)
 
-    def _scan_files(self) -> List[str]:
-        """扫描支持的代码文件 - Rust风格，基于语言映射表"""
+    def _scan_files_ultra_fast(self) -> List[str]:
+        """Phase2优化: 超快速文件扫描 - os.scandir + 早期退出"""
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+        
         files = []
         base = Path(self.index.base_path)
 
         if not base.exists():
             return files
 
-        # Linus原则: 基于语言映射表动态生成文件模式 - 零硬编码
-        supported_extensions = list(LANGUAGE_MAP.keys())
+        # 支持的扩展名集合 - O(1)查找
+        supported_extensions = set(LANGUAGE_MAP.keys())
+        skip_dirs = {'.venv', '__pycache__', '.git', 'node_modules', 'target', 'build', '.pytest_cache'}
         
-        # 扫描所有已知的文件扩展名
-        for ext in supported_extensions:
-            pattern = f"*{ext}"
-            for file_path in base.rglob(pattern):
-                # 跳过常见的非源码目录
-                if not any(skip in str(file_path) for skip in ['.venv', '__pycache__', '.git', 'node_modules', 'target', 'build']):
-                    files.append(str(file_path))
+        def scan_directory(dir_path: str) -> List[str]:
+            """使用os.scandir快速扫描单个目录"""
+            local_files = []
+            try:
+                with os.scandir(dir_path) as entries:
+                    for entry in entries:
+                        if entry.is_file(follow_symlinks=False):
+                            # 快速扩展名检查
+                            name = entry.name
+                            if '.' in name:
+                                ext = '.' + name.split('.')[-1].lower()
+                                if ext in supported_extensions:
+                                    local_files.append(entry.path)
+                        elif entry.is_dir(follow_symlinks=False):
+                            # 跳过排除目录 + 早期退出
+                            if entry.name not in skip_dirs:
+                                local_files.extend(scan_directory(entry.path))
+            except (OSError, PermissionError):
+                # 访问受限目录时静默跳过
+                pass
+            return local_files
+        
+        # 对大项目使用并行扫描
+        root_dirs = []
+        try:
+            with os.scandir(str(base)) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False) and entry.name not in skip_dirs:
+                        root_dirs.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        name = entry.name
+                        if '.' in name:
+                            ext = '.' + name.split('.')[-1].lower()
+                            if ext in supported_extensions:
+                                files.append(entry.path)
+        except (OSError, PermissionError):
+            return files
+        
+        # 并行处理子目录 - 最多4个线程
+        if len(root_dirs) > 2:
+            with ThreadPoolExecutor(max_workers=min(4, len(root_dirs))) as executor:
+                results = executor.map(scan_directory, root_dirs)
+                for result in results:
+                    files.extend(result)
+        else:
+            # 小项目直接顺序处理
+            for dir_path in root_dirs:
+                files.extend(scan_directory(dir_path))
+        
         return files
+
+    def _scan_files(self) -> List[str]:
+        """向后兼容的文件扫描 - 使用超快速实现"""
+        return self._scan_files_ultra_fast()
 
     def _index_file(self, file_path: str) -> None:
         """统一文件索引 - Linus原则: 消除特殊情况"""

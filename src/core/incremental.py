@@ -22,10 +22,22 @@ class FileChangeTracker:
     file_mtimes: Dict[str, float] = field(default_factory=dict)
     
     def get_file_hash(self, file_path: str) -> str:
-        """计算文件哈希 - 统一接口"""
+        """Phase2优化: 超快速文件哈希 - 元数据策略"""
         try:
+            path = Path(file_path)
+            if not path.exists():
+                return ""
+            
+            stat = path.stat()
+            
+            # Phase2策略: 大文件使用元数据，小文件使用内容哈希
+            if stat.st_size >= 10240:  # 10KB threshold
+                return f"{stat.st_mtime}:{stat.st_size}:{stat.st_ino}"
+            
+            # 小文件使用xxhash3 - 比MD5快5-10x
+            import xxhash
             with open(file_path, 'rb') as f:
-                return hashlib.md5(f.read()).hexdigest()
+                return xxhash.xxh3_64(f.read()).hexdigest()
         except (IOError, OSError):
             return ""
     
@@ -36,24 +48,35 @@ class FileChangeTracker:
         except (IOError, OSError):
             return 0.0
     
+    def get_file_mtime_from_stat(self, stat_info) -> float:
+        """从stat对象获取修改时间 - 避免重复系统调用"""
+        return stat_info.st_mtime
+    
     def is_file_changed(self, file_path: str) -> bool:
         """检查文件是否变更 - Good Taste: 统一变更检测"""
-        # 如果文件从未被跟踪过，认为是新文件（不是变更）
-        if file_path not in self.file_hashes and file_path not in self.file_mtimes:
-            return True
-        
-        # 优先使用修改时间检测（性能优化）
-        current_mtime = self.get_file_mtime(file_path)
-        cached_mtime = self.file_mtimes.get(file_path, 0.0)
-        
-        if current_mtime == cached_mtime and cached_mtime != 0.0:
+        try:
+            # 如果文件从未被跟踪过，认为是新文件（不是变更）
+            if file_path not in self.file_hashes and file_path not in self.file_mtimes:
+                return True
+            
+            # 获取文件状态 - 一次系统调用获取所有信息
+            import os
+            stat_info = os.stat(file_path)
+            current_mtime = stat_info.st_mtime
+            cached_mtime = self.file_mtimes.get(file_path, 0.0)
+            
+            # 快速mtime检查
+            if current_mtime == cached_mtime and cached_mtime != 0.0:
+                return False
+            
+            # 修改时间不同时，进行哈希验证（确保准确性）
+            current_hash = self.get_file_hash(file_path)
+            cached_hash = self.file_hashes.get(file_path, "")
+            
+            return current_hash != cached_hash
+            
+        except (IOError, OSError):
             return False
-        
-        # 修改时间不同时，进行哈希验证（确保准确性）
-        current_hash = self.get_file_hash(file_path)
-        cached_hash = self.file_hashes.get(file_path, "")
-        
-        return current_hash != cached_hash
     
     def update_file_tracking(self, file_path: str) -> None:
         """更新文件跟踪信息 - 原子操作"""
@@ -64,6 +87,113 @@ class FileChangeTracker:
         """移除文件跟踪 - 清理操作"""
         self.file_hashes.pop(file_path, None)
         self.file_mtimes.pop(file_path, None)
+
+    def batch_check_changes(self, file_paths: List[str]) -> List[str]:
+        """Phase2优化: 极简批量检测 - Linus原则: 简单胜过复杂"""
+        import os
+        changed_files = []
+        
+        if not file_paths:
+            return changed_files
+        
+        # Linus洞察: 对于文件I/O，简单的循环往往比并行更快
+        # 批量获取所有文件状态 - 一次性系统调用优化
+        file_stats = {}
+        for file_path in file_paths:
+            try:
+                file_stats[file_path] = os.stat(file_path)
+            except (OSError, PermissionError):
+                continue
+        
+        # 极速mtime过滤 - 避免不必要的哈希计算
+        hash_candidates = []
+        for file_path, stat_info in file_stats.items():
+            cached_mtime = self.file_mtimes.get(file_path, 0.0)
+            if stat_info.st_mtime != cached_mtime or cached_mtime == 0.0:
+                hash_candidates.append(file_path)
+        
+        # 仅对必要文件进行哈希验证
+        for file_path in hash_candidates:
+            try:
+                current_hash = self.get_file_hash(file_path)
+                cached_hash = self.file_hashes.get(file_path, "")
+                if current_hash != cached_hash:
+                    changed_files.append(file_path)
+            except Exception:
+                continue
+        
+        return changed_files
+    
+    def _sequential_check_changes(self, file_paths: List[str]) -> List[str]:
+        """顺序批量检测 - 极速优化版"""
+        import os
+        changed_files = []
+        
+        # 批量获取文件状态 - 减少系统调用
+        file_stats = {}
+        for file_path in file_paths:
+            try:
+                file_stats[file_path] = os.stat(file_path)
+            except (OSError, PermissionError):
+                continue
+        
+        # 快速mtime批量比较
+        candidates = []
+        for file_path, stat_info in file_stats.items():
+            current_mtime = stat_info.st_mtime
+            cached_mtime = self.file_mtimes.get(file_path, 0.0)
+            
+            # 只对mtime不同的文件进行哈希验证
+            if current_mtime != cached_mtime or cached_mtime == 0.0:
+                candidates.append(file_path)
+        
+        # 批量哈希验证 - 仅对必要的文件
+        for file_path in candidates:
+            try:
+                current_hash = self.get_file_hash(file_path)
+                cached_hash = self.file_hashes.get(file_path, "")
+                
+                if current_hash != cached_hash:
+                    changed_files.append(file_path)
+                    
+            except Exception:
+                continue
+        
+        return changed_files
+    
+    def _parallel_check_changes(self, file_paths: List[str]) -> List[str]:
+        """并行批量检测 - 适合大批量文件"""
+        from concurrent.futures import ThreadPoolExecutor
+        import os
+        
+        def check_single_file(file_path: str) -> Optional[str]:
+            """单文件完整检测"""
+            try:
+                if not os.path.exists(file_path):
+                    return None
+                
+                # 快速mtime检查
+                if file_path in self.file_mtimes:
+                    current_mtime = self.get_file_mtime(file_path)
+                    cached_mtime = self.file_mtimes.get(file_path, 0.0)
+                    
+                    if current_mtime == cached_mtime and cached_mtime != 0.0:
+                        return None
+                
+                # 哈希验证
+                current_hash = self.get_file_hash(file_path)
+                cached_hash = self.file_hashes.get(file_path, "")
+                
+                return file_path if current_hash != cached_hash else None
+                
+            except (OSError, PermissionError):
+                return None
+        
+        # 单个线程池，减少开销
+        max_workers = min(4, len(file_paths) // 50)  # 每50个文件一个线程
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(check_single_file, file_paths)
+            return list(filter(None, results))
 
 
 class IncrementalIndexer:
