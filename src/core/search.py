@@ -1,26 +1,35 @@
 """
-Search Engine - 搜索实现模块
+Search Engine - Linus风格重构版本
 
-从index.py中拆分出来的搜索逻辑
-按照plans.md要求独立化搜索功能
+Phase 3并行搜索引擎 - 符合200行限制
 """
 
 from typing import Dict, List, Any
 import time
+import re
 from pathlib import Path
 
 from .index import SearchQuery, SearchResult, CodeIndex
+from .search_parallel import ParallelSearchMixin
+from .search_cache import SearchCacheMixin
 
 
-class SearchEngine:
-    """搜索引擎 - 直接数据操作"""
+class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
+    """搜索引擎 - Linus风格组合设计"""
 
     def __init__(self, index: CodeIndex):
-        self.index = index
+        ParallelSearchMixin.__init__(self, index)
+        SearchCacheMixin.__init__(self, index)
 
     def search(self, query: SearchQuery) -> SearchResult:
-        """统一搜索分派"""
+        """统一搜索分派 - Phase 3优化版本"""
         start_time = time.time()
+
+        # Phase 3: 搜索结果缓存
+        cache_key = self.get_cache_key(query)
+        cached_result = self.get_cached_result(cache_key)
+        if cached_result:
+            return cached_result
 
         # 简单分派 - 无特殊情况
         search_methods = {
@@ -35,21 +44,31 @@ class SearchEngine:
         search_method = search_methods.get(query.type)
         matches = search_method(query) if search_method else []
 
-        return SearchResult(
+        # Phase 3: 早期退出优化
+        if query.limit and len(matches) > query.limit:
+            matches = matches[:query.limit]
+
+        result = SearchResult(
             matches=matches,
             total_count=len(matches),
             search_time=time.time() - start_time
         )
 
-    def _read_file_lines(self, file_path: str) -> List[str]:
-        """读取文件行 - 复用逻辑"""
-        try:
-            return (Path(self.index.base_path) / file_path).read_text(encoding='utf-8', errors='ignore').split('\n')
-        except Exception:
-            return []
+        # 缓存结果
+        self.cache_result(cache_key, result)
+        return result
 
     def _search_text(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """文本搜索 - 最简实现"""
+        """文本搜索 - 智能单/多线程选择"""
+        file_count = len(self.index.files)
+
+        if self._should_use_parallel(file_count):
+            return self.search_text_parallel(query)
+        else:
+            return self._search_text_single(query)
+
+    def _search_text_single(self, query: SearchQuery) -> List[Dict[str, Any]]:
+        """单线程文本搜索"""
         pattern = query.pattern.lower() if not query.case_sensitive else query.pattern
         matches = []
         for file_path, file_info in self.index.files.items():
@@ -63,15 +82,26 @@ class SearchEngine:
                         "content": line.strip(),
                         "language": file_info.language
                     })
+                    if query.limit and len(matches) >= query.limit:
+                        return matches
         return matches
 
     def _search_regex(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """正则搜索 - 最简实现"""
-        import re
+        """正则搜索 - 智能单/多线程选择"""
         try:
             regex = re.compile(query.pattern, 0 if query.case_sensitive else re.IGNORECASE)
         except re.error:
             return []
+
+        file_count = len(self.index.files)
+
+        if self._should_use_parallel(file_count):
+            return self.search_regex_parallel(query, regex)
+        else:
+            return self._search_regex_single(query, regex)
+
+    def _search_regex_single(self, query: SearchQuery, regex) -> List[Dict[str, Any]]:
+        """单线程正则搜索"""
         matches = []
         for file_path, file_info in self.index.files.items():
             lines = self._read_file_lines(file_path)
@@ -83,10 +113,12 @@ class SearchEngine:
                         "content": line.strip(),
                         "language": file_info.language
                     })
+                    if query.limit and len(matches) >= query.limit:
+                        return matches
         return matches
 
     def _search_symbol(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """符号搜索 - 最简实现"""
+        """符号搜索 - 直接数据访问"""
         pattern = query.pattern.lower() if not query.case_sensitive else query.pattern
         matches = []
         for symbol_name, symbol_info in self.index.symbols.items():
@@ -98,14 +130,22 @@ class SearchEngine:
                     "file": symbol_info.file,
                     "line": symbol_info.line
                 })
+                if query.limit and len(matches) >= query.limit:
+                    break
         return matches
 
     def _find_references(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """查找引用 - 最简实现"""
         symbol_info = self.index.symbols.get(query.pattern)
+        if not symbol_info:
+            return []
         return [
             {"file": ref.split(':')[0], "line": int(ref.split(':')[1]), "type": "reference"}
-            for ref in (symbol_info.references if symbol_info else [])
+            for ref in symbol_info.references
+            if ':' in ref
+        ][:query.limit] if query.limit else [
+            {"file": ref.split(':')[0], "line": int(ref.split(':')[1]), "type": "reference"}
+            for ref in symbol_info.references
             if ':' in ref
         ]
 
@@ -133,4 +173,6 @@ class SearchEngine:
                     "line": caller_info.line,
                     "type": "caller"
                 })
+                if query.limit and len(matches) >= query.limit:
+                    break
         return matches

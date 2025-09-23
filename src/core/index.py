@@ -34,6 +34,7 @@ class SearchQuery:
     type: str = "text"
     file_pattern: Optional[str] = None
     case_sensitive: bool = True
+    limit: Optional[int] = 1000  # Phase 3: 早期退出优化 - 默认最大1000结果
 
 
 @dataclass

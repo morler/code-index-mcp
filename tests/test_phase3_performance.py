@@ -4,7 +4,7 @@ Phase 3 Performance Test - Linus式性能验证
 
 测试第3阶段优化效果：
 1. 搜索性能对比
-2. 内存使用分析
+2. 内存使用分析  
 3. 工具函数响应时间
 """
 
@@ -13,11 +13,10 @@ import sys
 import os
 
 # 添加src到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from core.index import CodeIndex, SearchQuery, FileInfo, SymbolInfo
 from core.search import SearchEngine
-from core.search_optimized import OptimizedSearchEngine
 from core.mcp_tools import execute_tool
 
 
