@@ -38,6 +38,22 @@ Thumbs.db
 # Code Index MCP specific files
 .code_indexer/
 
+# Development artifacts and backup files
+.edit_backup/
+*_old.py
+*.bak
+*_backup.*
+dev_tools/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.serena/
+
+# Performance and debugging files
+phase*_performance_report.json
+*.prof
+
 
 # Claude Code generated files
 CLAUDE.local.md

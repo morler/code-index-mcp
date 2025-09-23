@@ -22,12 +22,11 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
         SearchCacheMixin.__init__(self, index)
 
     def search(self, query: SearchQuery) -> SearchResult:
-        """统一搜索分派 - Phase 3优化版本"""
+        """统一搜索分派 - Phase 4智能缓存版本"""
         start_time = time.time()
 
-        # Phase 3: 搜索结果缓存
-        cache_key = self.get_cache_key(query)
-        cached_result = self.get_cached_result(cache_key)
+        # Phase 4: 智能查询结果缓存
+        cached_result = self.get_cached_query_result(query)
         if cached_result:
             return cached_result
 
@@ -54,8 +53,8 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
             search_time=time.time() - start_time
         )
 
-        # 缓存结果
-        self.cache_result(cache_key, result)
+        # Phase 4: 智能缓存结果和依赖
+        self.cache_query_result(query, result)
         return result
 
     def _search_text(self, query: SearchQuery) -> List[Dict[str, Any]]:

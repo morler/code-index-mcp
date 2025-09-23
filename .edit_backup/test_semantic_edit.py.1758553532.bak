@@ -1,8 +1,0 @@
-def hello_world():
-    """原始函数"""
-    message = "Hello, World!"
-    print(message)
-    return message
-
-def another_function():
-    return 42

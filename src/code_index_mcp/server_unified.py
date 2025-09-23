@@ -26,21 +26,27 @@ def unified_tool(operation: str, **params) -> Dict[str, Any]:
     return execute_tool(operation, **params)
 
 
-# 向后兼容的具体工具 - 最小化数量
+# ----- 核心工具组 - 保留最常用的 -----
+
 @mcp.tool()
 def set_project_path(path: str) -> Dict[str, Any]:
+    """项目初始化 - 必需工具"""
     return execute_tool("set_project_path", path=path)
 
 
-@mcp.tool()
+@mcp.tool() 
 def search_code(pattern: str, search_type: str = "text") -> Dict[str, Any]:
+    """统一搜索 - 合并所有搜索功能"""
     return execute_tool("search_code", pattern=pattern, search_type=search_type)
 
 
 @mcp.tool()
 def find_files(pattern: str) -> Dict[str, Any]:
+    """文件查找 - 高频使用"""
     return execute_tool("find_files", pattern=pattern)
 
+
+# ----- 文件操作组 - 合并读取和编辑 -----
 
 @mcp.tool()
 def get_file_content(file_path: str, start_line: int = None, end_line: int = None) -> Dict[str, Any]:
@@ -54,7 +60,7 @@ def get_symbol_body(symbol_name: str, file_path: str = None, language: str = "au
     return execute_tool("get_symbol_body", symbol_name=symbol_name, file_path=file_path, language=language)
 
 
-# ----- 语义编辑工具 - 新增 -----
+# ----- 语义编辑组 - 合并编辑操作 -----
 
 @mcp.tool()
 def rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
@@ -72,6 +78,10 @@ def add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
 def apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
     """应用编辑操作 - 原子操作和备份"""
     return execute_tool("apply_edit", file_path=file_path, old_content=old_content, new_content=new_content)
+
+
+# 注意：其他17个工具通过unified_tool(operation, params)访问
+# 例如：unified_tool("find_references", '{"symbol_name": "function_name"}')
 
 
 def main():
