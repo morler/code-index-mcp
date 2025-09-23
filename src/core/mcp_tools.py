@@ -211,7 +211,7 @@ def tool_check_file_exists(file_path: str) -> Dict[str, Any]:
 # ----- 文件内容读取工具 - Linus式直接访问 -----
 
 @handle_mcp_errors
-def tool_get_file_content(file_path: str, start_line: int = None, end_line: int = None) -> Dict[str, Any]:
+def tool_get_file_content(file_path: str, start_line: int = None, end_line: int = None, show_line_numbers: bool = False) -> Dict[str, Any]:
     """获取文件内容 - 直接操作，零抽象，支持全文件和片段"""
     index = get_index()
 
@@ -229,26 +229,35 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
             start_idx = max(0, start_line - 1)
             end_idx = len(lines) if end_line is None else min(len(lines), end_line)
             content_lines = lines[start_idx:end_idx]
-            line_numbers = list(range(start_line, start_line + len(content_lines)))
+            actual_start = start_line
         else:
             content_lines = lines
-            line_numbers = list(range(1, len(lines) + 1))
+            actual_start = 1
 
         # 获取文件元信息（如果已索引）
         file_info = index.get_file(file_path)
         language = file_info.language if file_info else "unknown"
 
-        return {
+        # 构建返回数据 - 条件性包含line_numbers
+        result = {
             "success": True,
             "file_path": file_path,
             "content": content_lines,
-            "line_numbers": line_numbers,
             "total_lines": len(lines),
             "language": language,
             "encoding": "utf-8",
-            "start_line": start_line or 1,
+            "start_line": actual_start,
             "end_line": end_line or len(lines)
         }
+
+        # 只在需要时添加line_numbers - 消除冗余数据
+        if show_line_numbers:
+            if start_line is not None:
+                result["line_numbers"] = list(range(start_line, start_line + len(content_lines)))
+            else:
+                result["line_numbers"] = list(range(1, len(lines) + 1))
+
+        return result
     except Exception as e:
         return _create_error_response(e, "Failed to read file")
 
@@ -351,7 +360,7 @@ def _detect_indent_body_end(lines: List[str], start_idx: int) -> int:
 
 
 @handle_mcp_errors
-def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto") -> Dict[str, Any]:
+def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto", show_line_numbers: bool = False) -> Dict[str, Any]:
     """
     获取符号完整语法体 - Linus式组合现有功能
 
@@ -388,9 +397,9 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
         start_idx = max(0, start_line - 1)
         end_idx = min(len(lines), end_line)
         body_lines = lines[start_idx:end_idx]
-        line_numbers = list(range(start_line, start_line + len(body_lines)))
 
-        return {
+        # 构建返回数据 - 条件性包含line_numbers
+        result = {
             "success": True,
             "symbol_name": symbol_name,
             "symbol_type": symbol_info.type,
@@ -399,10 +408,15 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
             "start_line": start_line,
             "end_line": end_line,
             "body_lines": body_lines,
-            "line_numbers": line_numbers,
             "signature": symbol_info.signature,
             "total_lines": len(body_lines)
         }
+
+        # 只在需要时添加line_numbers - 消除冗余数据
+        if show_line_numbers:
+            result["line_numbers"] = list(range(start_line, start_line + len(body_lines)))
+
+        return result
 
     except Exception as e:
         return _create_error_response(e, "Failed to extract symbol body")

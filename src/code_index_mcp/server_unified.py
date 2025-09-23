@@ -49,15 +49,15 @@ def find_files(pattern: str) -> Dict[str, Any]:
 # ----- 文件操作组 - 合并读取和编辑 -----
 
 @mcp.tool()
-def get_file_content(file_path: str, start_line: int = None, end_line: int = None) -> Dict[str, Any]:
-    """获取文件内容 - 支持全文件和特定行范围"""
-    return execute_tool("get_file_content", file_path=file_path, start_line=start_line, end_line=end_line)
+def get_file_content(file_path: str, start_line: int = None, end_line: int = None, show_line_numbers: bool = False) -> Dict[str, Any]:
+    """获取文件内容 - 支持全文件和特定行范围，可选显示行号"""
+    return execute_tool("get_file_content", file_path=file_path, start_line=start_line, end_line=end_line, show_line_numbers=show_line_numbers)
 
 
 @mcp.tool()
-def get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto") -> Dict[str, Any]:
-    """获取符号完整语法体 - 自动检测边界，支持多语言"""
-    return execute_tool("get_symbol_body", symbol_name=symbol_name, file_path=file_path, language=language)
+def get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto", show_line_numbers: bool = False) -> Dict[str, Any]:
+    """获取符号完整语法体 - 自动检测边界，支持多语言，可选显示行号"""
+    return execute_tool("get_symbol_body", symbol_name=symbol_name, file_path=file_path, language=language, show_line_numbers=show_line_numbers)
 
 
 # ----- 语义编辑组 - 合并编辑操作 -----
