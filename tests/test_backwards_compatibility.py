@@ -115,8 +115,7 @@ def test_mcp_tools_interface():
 
 def test_error_handling():
     """测试错误处理装饰器"""
-    print("
-🚨 测试错误处理装饰器...")
+    print("🚨 测试错误处理装饰器...")
     
     try:
         from core.mcp_tools import tool_get_file_summary
@@ -135,8 +134,7 @@ def test_error_handling():
 
 def test_path_handling():
     """测试路径处理一致性"""
-    print("
-📁 测试路径处理一致性...")
+    print("📁 测试路径处理一致性...")
     
     try:
         from core.builder import normalize_path
@@ -151,7 +149,7 @@ def test_path_handling():
         for input_path, base_path, expected in test_cases:
             result = normalize_path(input_path, base_path)
             # 简化验证：只检查路径分隔符
-            assert "\" not in result, f"路径应使用正斜杠: {result}"
+            assert "\\" not in result, f"路径应使用正斜杠: {result}"
         
         print("✅ 路径处理一致性测试通过")
         return True
@@ -161,8 +159,7 @@ def test_path_handling():
 
 def test_semantic_editing():
     """测试语义编辑功能"""
-    print("
-✏️  测试语义编辑功能...")
+    print("✏️  测试语义编辑功能...")
     
     try:
         from core.mcp_tools import tool_rename_symbol, tool_add_import
