@@ -17,7 +17,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Optional
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -41,14 +41,26 @@ class FileWatcher:
 
         # Linus洞察: 用集合而不是列表避免重复事件
         self._supported_extensions = {
-            '.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.go',
-            '.zig', '.rs', '.c', '.cpp', '.cc', '.h', '.hpp'
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".java",
+            ".go",
+            ".zig",
+            ".rs",
+            ".c",
+            ".cpp",
+            ".cc",
+            ".h",
+            ".hpp",
         }
 
         # 防抖动 - 避免频繁的连续事件
         self._debounce_time = 0.1  # 100ms
         self._last_events: Dict[str, float] = {}
-        
+
         # 内存优化: 定期清理旧事件缓存
         self._max_cache_size = 1000  # 最大缓存文件数
         self._cache_cleanup_threshold = 300  # 清理阈值(秒)
@@ -59,7 +71,7 @@ class FileWatcher:
             "permission_errors": 0,
             "file_not_found": 0,
             "index_errors": 0,
-            "other_errors": 0
+            "other_errors": 0,
         }
 
     def start_watching(self) -> bool:
@@ -76,11 +88,7 @@ class FileWatcher:
                 handler = _IndexEventHandler(self)
 
                 # 递归监控整个项目目录
-                self.observer.schedule(
-                    handler,
-                    self.index.base_path,
-                    recursive=True
-                )
+                self.observer.schedule(handler, self.index.base_path, recursive=True)
 
                 self.observer.start()
                 self._is_watching = True
@@ -135,7 +143,7 @@ class FileWatcher:
 
         # 改进: 标准化文件路径，处理符号链接
         normalized_path = self._normalize_file_path(file_path)
-        
+
         # 改进: 精细化错误处理，分类处理不同异常
         try:
             # 文件存在 → 强制更新索引
@@ -166,10 +174,10 @@ class FileWatcher:
     def _should_debounce(self, file_path: str) -> bool:
         """防抖动检查 - 改进版，包含内存优化"""
         current_time = time.time()
-        
+
         # 内存优化: 定期清理旧事件缓存
         self._cleanup_old_events_if_needed(current_time)
-        
+
         last_time = self._last_events.get(file_path, 0)
 
         if current_time - last_time < self._debounce_time:
@@ -177,34 +185,35 @@ class FileWatcher:
 
         self._last_events[file_path] = current_time
         return False
-    
+
     def _cleanup_old_events_if_needed(self, current_time: float) -> None:
         """内存优化: 定期清理过期的事件缓存"""
         # 检查是否需要清理
-        if (current_time - self._last_cleanup < self._cache_cleanup_threshold and 
-            len(self._last_events) < self._max_cache_size):
+        if (
+            current_time - self._last_cleanup < self._cache_cleanup_threshold
+            and len(self._last_events) < self._max_cache_size
+        ):
             return
-            
+
         # 清理超过阈值时间的旧事件
         cutoff_time = current_time - self._cache_cleanup_threshold
         old_keys = [
-            path for path, timestamp in self._last_events.items() 
+            path
+            for path, timestamp in self._last_events.items()
             if timestamp < cutoff_time
         ]
-        
+
         for key in old_keys:
             del self._last_events[key]
-            
+
         # 如果缓存仍然太大，保留最新的条目
         if len(self._last_events) > self._max_cache_size:
             # 按时间戳排序，保留最新的max_cache_size个
             sorted_events = sorted(
-                self._last_events.items(), 
-                key=lambda x: x[1], 
-                reverse=True
+                self._last_events.items(), key=lambda x: x[1], reverse=True
             )
-            self._last_events = dict(sorted_events[:self._max_cache_size])
-            
+            self._last_events = dict(sorted_events[: self._max_cache_size])
+
         self._last_cleanup = current_time
 
     def _is_supported_file(self, file_path: str) -> bool:
@@ -213,23 +222,24 @@ class FileWatcher:
             return Path(file_path).suffix.lower() in self._supported_extensions
         except Exception:
             return False
-    
+
     def _normalize_file_path(self, file_path: str) -> str:
         """标准化文件路径 - 处理符号链接和路径标准化"""
         try:
             path_obj = Path(file_path)
-            
+
             # 解析符号链接到实际路径
             if path_obj.is_symlink():
                 resolved_path = path_obj.resolve()
                 # 确保解析后的路径存在且在项目目录内
-                if (resolved_path.exists() and 
-                    str(resolved_path).startswith(str(Path(self.index.base_path).resolve()))):
+                if resolved_path.exists() and str(resolved_path).startswith(
+                    str(Path(self.index.base_path).resolve())
+                ):
                     return str(resolved_path)
-            
+
             # 标准化路径（解决相对路径、.、..等问题）
             return str(path_obj.resolve())
-            
+
         except (OSError, RuntimeError):
             # 如果路径解析失败，返回原始路径
             return file_path
@@ -247,8 +257,8 @@ class FileWatcher:
             "error_stats": self._error_stats.copy(),
             "memory_usage": {
                 "event_cache_size": len(self._last_events),
-                "cache_utilization": f"{len(self._last_events)}/{self._max_cache_size}"
-            }
+                "cache_utilization": f"{len(self._last_events)}/{self._max_cache_size}",
+            },
         }
 
 

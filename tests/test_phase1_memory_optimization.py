@@ -16,12 +16,16 @@ Phase 1 内存管理优化验证测试 - Linus风格直接验证
 
 import time
 import tempfile
-import os
 import psutil
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 
-from src.core.cache import OptimizedFileCache, get_file_cache, clear_global_cache, _calculate_smart_cache_size
+from src.core.cache import (
+    OptimizedFileCache,
+    get_file_cache,
+    clear_global_cache,
+    _calculate_smart_cache_size,
+)
 
 
 def create_large_project_files(base_dir: str, count: int = 1000) -> List[str]:
@@ -99,7 +103,7 @@ CONFIG_{i} = {{
         for line_num in range(line_count - 40):  # 减去已有的40行
             content += f"# Additional line {line_num} for {complexity} file {i}\n"
 
-        file_path.write_text(content, encoding='utf-8')
+        file_path.write_text(content, encoding="utf-8")
         files.append(str(file_path))
 
     return files
@@ -114,7 +118,7 @@ def test_smart_cache_sizing():
 
     # 获取系统内存信息进行验证
     memory = psutil.virtual_memory()
-    total_memory_gb = memory.total / (1024 ** 3)
+    total_memory_gb = memory.total / (1024**3)
 
     print(f"   系统内存: {total_memory_gb:.1f}GB")
     print(f"   计算的缓存大小: {max_files} 文件")
@@ -154,7 +158,9 @@ def test_memory_pressure_detection():
             # 每20个文件检查一次
             if i % 20 == 0:
                 stats = cache.get_cache_stats()
-                print(f"   进度: {i+1}/150, 缓存文件: {stats['file_count']}, 内存: {stats['memory_usage_mb']:.1f}MB")
+                print(
+                    f"   进度: {i+1}/150, 缓存文件: {stats['file_count']}, 内存: {stats['memory_usage_mb']:.1f}MB"
+                )
 
         # 获取最终统计
         final_stats = cache.get_cache_stats()
@@ -166,8 +172,12 @@ def test_memory_pressure_detection():
         print(f"   紧急清理: {final_stats['emergency_cleanups']}")
 
         # 验证内存限制有效
-        assert final_stats['memory_usage_mb'] <= 5.0, f"内存限制失效: {final_stats['memory_usage_mb']:.2f}MB"
-        assert final_stats['file_count'] <= 100, f"文件数量限制失效: {final_stats['file_count']}"
+        assert (
+            final_stats["memory_usage_mb"] <= 5.0
+        ), f"内存限制失效: {final_stats['memory_usage_mb']:.2f}MB"
+        assert (
+            final_stats["file_count"] <= 100
+        ), f"文件数量限制失效: {final_stats['file_count']}"
 
         print("✅ 内存压力检测测试通过!")
         return final_stats
@@ -223,7 +233,7 @@ def test_intelligent_lru_strategy():
         print(f"   高频文件保留: {high_freq_preserved}/{len(high_freq_files)}")
 
         # 验证策略效果
-        assert stats['file_count'] <= 20, "文件数量控制失效"
+        assert stats["file_count"] <= 20, "文件数量控制失效"
         assert high_freq_preserved >= 3, "智能LRU策略未能保护高频文件"
 
         print("✅ 智能LRU策略测试通过!")
@@ -253,7 +263,7 @@ def test_cache_statistics_monitoring():
         # 获取详细统计
         stats = cache.get_cache_stats()
 
-        print(f"   📈 缓存统计报告:")
+        print("   📈 缓存统计报告:")
         print(f"      文件数量: {stats['file_count']}")
         print(f"      内存使用: {stats['memory_usage_mb']:.2f}MB")
         print(f"      缓存命中率: {stats['cache_hit_ratio']:.3f}")
@@ -267,17 +277,19 @@ def test_cache_statistics_monitoring():
         print(f"      可用内存: {stats['system_available_mb']:.0f}MB")
 
         # 验证统计数据合理性
-        assert stats['total_requests'] > 0, "总请求数应该大于0"
-        assert stats['cache_hits'] + stats['cache_misses'] == stats['total_requests'], "命中数据不一致"
-        assert 0 <= stats['cache_hit_ratio'] <= 1, "命中率应该在0-1之间"
-        assert stats['memory_usage_mb'] > 0, "内存使用应该大于0"
+        assert stats["total_requests"] > 0, "总请求数应该大于0"
+        assert (
+            stats["cache_hits"] + stats["cache_misses"] == stats["total_requests"]
+        ), "命中数据不一致"
+        assert 0 <= stats["cache_hit_ratio"] <= 1, "命中率应该在0-1之间"
+        assert stats["memory_usage_mb"] > 0, "内存使用应该大于0"
 
         # 检查访问模式统计
-        if 'most_accessed_files' in stats:
+        if "most_accessed_files" in stats:
             print(f"   🔥 最高访问文件数: {len(stats['most_accessed_files'])}")
 
-        if 'recent_activity' in stats:
-            activity = stats['recent_activity']
+        if "recent_activity" in stats:
+            activity = stats["recent_activity"]
             print(f"   ⚡ 最近活动: {activity['active_files_last_hour']} 文件")
             print(f"   🎯 缓存效率: {activity['cache_efficiency']}")
 
@@ -327,7 +339,7 @@ def test_phase1_performance_targets():
         # 获取详细统计
         stats = cache.get_cache_stats()
 
-        print(f"\n   📊 Phase 1 性能结果:")
+        print("\n   📊 Phase 1 性能结果:")
         print(f"      总加载时间: {load_time:.2f}秒")
         print(f"      缓存文件数: {stats['file_count']}")
         print(f"      缓存内存使用: {stats['memory_usage_mb']:.1f}MB")
@@ -336,37 +348,49 @@ def test_phase1_performance_targets():
         print(f"      清理次数: {stats['cleanup_count']}")
 
         # 验证Phase 1目标
-        print(f"\n   🎯 目标验证:")
+        print("\n   🎯 目标验证:")
 
         # 目标1: 内存使用 < 100MB (1000文件)
         memory_target = cache_memory < 100
-        print(f"      内存目标 (<100MB): {'✅' if memory_target else '❌'} {cache_memory:.1f}MB")
+        print(
+            f"      内存目标 (<100MB): {'✅' if memory_target else '❌'} {cache_memory:.1f}MB"
+        )
 
         # 目标2: 缓存命中率 > 70%
-        hit_rate_target = stats['cache_hit_ratio'] > 0.7
-        print(f"      命中率目标 (>70%): {'✅' if hit_rate_target else '❌'} {stats['cache_hit_ratio']:.1%}")
+        hit_rate_target = stats["cache_hit_ratio"] > 0.7
+        print(
+            f"      命中率目标 (>70%): {'✅' if hit_rate_target else '❌'} {stats['cache_hit_ratio']:.1%}"
+        )
 
         # 目标3: 无内存泄漏 (合理的内存增长)
         memory_leak_check = cache_memory < 200  # 合理上限
-        print(f"      内存泄漏检查 (<200MB): {'✅' if memory_leak_check else '❌'} {cache_memory:.1f}MB")
+        print(
+            f"      内存泄漏检查 (<200MB): {'✅' if memory_leak_check else '❌'} {cache_memory:.1f}MB"
+        )
 
         # 目标4: 性能合理 (平均<1ms/文件)
         avg_time_per_file = (load_time / 1000) * 1000  # ms
         performance_target = avg_time_per_file < 1.0
-        print(f"      性能目标 (<1ms/文件): {'✅' if performance_target else '❌'} {avg_time_per_file:.2f}ms")
+        print(
+            f"      性能目标 (<1ms/文件): {'✅' if performance_target else '❌'} {avg_time_per_file:.2f}ms"
+        )
 
         # 总体评估
-        all_targets_met = all([memory_target, hit_rate_target, memory_leak_check, performance_target])
+        all_targets_met = all(
+            [memory_target, hit_rate_target, memory_leak_check, performance_target]
+        )
 
-        print(f"\n   🏆 Phase 1 总体评估: {'✅ 全部达标' if all_targets_met else '❌ 部分未达标'}")
+        print(
+            f"\n   🏆 Phase 1 总体评估: {'✅ 全部达标' if all_targets_met else '❌ 部分未达标'}"
+        )
 
         return {
-            'memory_usage_mb': cache_memory,
-            'cache_hit_ratio': stats['cache_hit_ratio'],
-            'load_time_seconds': load_time,
-            'avg_time_per_file_ms': avg_time_per_file,
-            'targets_met': all_targets_met,
-            'detailed_stats': stats
+            "memory_usage_mb": cache_memory,
+            "cache_hit_ratio": stats["cache_hit_ratio"],
+            "load_time_seconds": load_time,
+            "avg_time_per_file_ms": avg_time_per_file,
+            "targets_met": all_targets_met,
+            "detailed_stats": stats,
         }
 
 
@@ -389,25 +413,36 @@ def main():
         print("=" * 80)
 
         # 总结报告
-        print(f"\n📋 Phase 1 优化总结:")
-        print(f"   智能缓存大小: ✅ 自动适配系统内存")
-        print(f"   内存压力检测: ✅ 自动清理和保护")
-        print(f"   智能LRU策略: ✅ 访问模式感知")
-        print(f"   缓存统计监控: ✅ 完整性能指标")
-        print(f"   性能目标达成: {'✅' if performance_results['targets_met'] else '❌'}")
+        print("\n📋 Phase 1 优化总结:")
+        print("   智能缓存大小: ✅ 自动适配系统内存")
+        print("   内存压力检测: ✅ 自动清理和保护")
+        print("   智能LRU策略: ✅ 访问模式感知")
+        print("   缓存统计监控: ✅ 完整性能指标")
+        print(
+            f"   性能目标达成: {'✅' if performance_results['targets_met'] else '❌'}"
+        )
 
-        if performance_results['targets_met']:
-            print(f"\n🏆 恭喜! Phase 1 内存管理优化全部目标达成:")
-            print(f"   • 内存使用: {performance_results['memory_usage_mb']:.1f}MB (目标: <100MB)")
-            print(f"   • 缓存命中率: {performance_results['cache_hit_ratio']:.1%} (目标: >70%)")
-            print(f"   • 平均性能: {performance_results['avg_time_per_file_ms']:.2f}ms/文件 (目标: <1ms)")
-            print(f"   • 加载时间: {performance_results['load_time_seconds']:.2f}秒/1000文件")
+        if performance_results["targets_met"]:
+            print("\n🏆 恭喜! Phase 1 内存管理优化全部目标达成:")
+            print(
+                f"   • 内存使用: {performance_results['memory_usage_mb']:.1f}MB (目标: <100MB)"
+            )
+            print(
+                f"   • 缓存命中率: {performance_results['cache_hit_ratio']:.1%} (目标: >70%)"
+            )
+            print(
+                f"   • 平均性能: {performance_results['avg_time_per_file_ms']:.2f}ms/文件 (目标: <1ms)"
+            )
+            print(
+                f"   • 加载时间: {performance_results['load_time_seconds']:.2f}秒/1000文件"
+            )
 
-        return performance_results['targets_met']
+        return performance_results["targets_met"]
 
     except Exception as e:
         print(f"\n❌ 测试失败: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

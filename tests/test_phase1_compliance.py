@@ -12,7 +12,7 @@ from pathlib import Path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
-from core.index import set_project_path, get_index, SearchQuery
+from core.index import set_project_path, SearchQuery
 
 
 def test_phase1_compliance():
@@ -31,7 +31,10 @@ def test_phase1_compliance():
 
     # 2. 验证文件行数 ≤200 (使用wc兼容计算)
     import subprocess
-    result = subprocess.run(['wc', '-l', str(core_files[0])], capture_output=True, text=True)
+
+    result = subprocess.run(
+        ["wc", "-l", str(core_files[0])], capture_output=True, text=True
+    )
     line_count = int(result.stdout.split()[0]) if result.returncode == 0 else 999
     if line_count <= 200:
         print(f"✅ 文件行数: {line_count}行 (≤200)")
@@ -60,7 +63,9 @@ def test_phase1_compliance():
         # 测试搜索接口
         query = SearchQuery(pattern="def", type="text")
         result = index.search(query)
-        print(f"✅ 统一搜索接口: {result.total_count} matches in {result.search_time:.3f}s")
+        print(
+            f"✅ 统一搜索接口: {result.total_count} matches in {result.search_time:.3f}s"
+        )
 
     except Exception as e:
         print(f"❌ 数据结构测试失败: {e}")
@@ -76,7 +81,9 @@ def verify_plans_compliance():
 
     # 检查计划要求1: 删除所有*_service.py文件
     service_files = list(Path(".").rglob("*_service.py"))
-    service_files = [f for f in service_files if "test" not in str(f) and "sample" not in str(f)]
+    service_files = [
+        f for f in service_files if "test" not in str(f) and "sample" not in str(f)
+    ]
 
     if len(service_files) == 0:
         print("✅ 1. 删除所有*_service.py文件 - 完成")
@@ -92,7 +99,7 @@ def verify_plans_compliance():
 
     # 检查计划要求3: 移除抽象层
     if core_index.exists():
-        content = core_index.read_text(encoding='utf-8')
+        content = core_index.read_text(encoding="utf-8")
         if "BaseService" not in content and "ContextHelper" not in content:
             print("✅ 3. 移除BaseService、ContextHelper等抽象 - 完成")
         else:

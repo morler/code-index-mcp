@@ -215,7 +215,7 @@ class IncrementalIndexer:
         self.builder = IndexBuilder(index)
         self.tracker = FileChangeTracker()
 
-    def update_index(self, root_path: str = None) -> Dict[str, int]:
+    def update_index(self, root_path: Optional[str] = None) -> Dict[str, int]:
         """
         增量更新索引 - 主入口
 

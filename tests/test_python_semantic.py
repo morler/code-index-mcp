@@ -7,10 +7,9 @@ Simple test of Python AST-based semantic analysis.
 import pytest
 import sys
 import os
-import ast
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Direct import to avoid package-level tree-sitter dependencies
 import importlib.util
@@ -18,7 +17,15 @@ import importlib.util
 # Import SymbolInfo directly
 spec = importlib.util.spec_from_file_location(
     "symbol_info",
-    os.path.join(os.path.dirname(__file__), '..', 'src', 'code_index_mcp', 'indexing', 'models', 'symbol_info.py')
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "src",
+        "code_index_mcp",
+        "indexing",
+        "models",
+        "symbol_info.py",
+    ),
 )
 symbol_info_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(symbol_info_module)
@@ -27,7 +34,15 @@ SymbolInfo = symbol_info_module.SymbolInfo
 # Import FileInfo directly
 spec = importlib.util.spec_from_file_location(
     "file_info",
-    os.path.join(os.path.dirname(__file__), '..', 'src', 'code_index_mcp', 'indexing', 'models', 'file_info.py')
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "src",
+        "code_index_mcp",
+        "indexing",
+        "models",
+        "file_info.py",
+    ),
 )
 file_info_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(file_info_module)
@@ -37,7 +52,15 @@ FileInfo = file_info_module.FileInfo
 try:
     spec = importlib.util.spec_from_file_location(
         "python_strategy",
-        os.path.join(os.path.dirname(__file__), '..', 'src', 'code_index_mcp', 'indexing', 'strategies', 'python_strategy.py')
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "src",
+            "code_index_mcp",
+            "indexing",
+            "strategies",
+            "python_strategy.py",
+        ),
     )
     python_strategy_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(python_strategy_module)
@@ -48,7 +71,9 @@ except Exception as e:
     PYTHON_STRATEGY_AVAILABLE = False
 
 
-@pytest.mark.skipif(not PYTHON_STRATEGY_AVAILABLE, reason="Python strategy not available")
+@pytest.mark.skipif(
+    not PYTHON_STRATEGY_AVAILABLE, reason="Python strategy not available"
+)
 class TestPythonSemanticStrategy:
     """Test Python strategy semantic enhancements."""
 
@@ -75,14 +100,14 @@ def test_function():
     def test_python_strategy_tracks_dependencies(self):
         """Test Python strategy tracks function dependencies."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 def helper_function():
     return "helper"
 
 def main_function():
     result = helper_function()
     return result
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.py", content)
 
@@ -99,14 +124,14 @@ def main_function():
     def test_python_strategy_tracks_called_by(self):
         """Test Python strategy tracks called_by relationships."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 def helper_function():
     return "helper"
 
 def main_function():
     result = helper_function()
     return result
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.py", content)
 
@@ -123,14 +148,14 @@ def main_function():
     def test_python_strategy_class_methods(self):
         """Test Python strategy handles class methods correctly."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 class TestClass:
     def method1(self):
         return self.method2()
 
     def method2(self):
         return "result"
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.py", content)
 
@@ -157,14 +182,14 @@ class TestClass:
     def test_python_strategy_nested_imports(self):
         """Test Python strategy handles imports within functions."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 def function_with_imports():
     import json
     from collections import defaultdict
 
     data = json.loads('{}')
     return defaultdict(list)
-'''
+"""
 
         symbols, file_info = strategy.parse_file("test.py", content)
 

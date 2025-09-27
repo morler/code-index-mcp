@@ -9,14 +9,23 @@ import sys
 import os
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 # Direct import to avoid package-level imports
 import importlib.util
 import sys
+
 spec = importlib.util.spec_from_file_location(
     "symbol_info",
-    os.path.join(os.path.dirname(__file__), '..', 'src', 'code_index_mcp', 'indexing', 'models', 'symbol_info.py')
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "src",
+        "code_index_mcp",
+        "indexing",
+        "models",
+        "symbol_info.py",
+    ),
 )
 symbol_info_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(symbol_info_module)
@@ -28,18 +37,14 @@ class TestSymbolInfoSemanticFields:
 
     def test_symbol_info_has_semantic_fields(self):
         """Test that SymbolInfo has all new semantic fields."""
-        symbol = SymbolInfo(
-            type="function",
-            file="test.py",
-            line=1
-        )
+        symbol = SymbolInfo(type="function", file="test.py", line=1)
 
         # Check all semantic fields exist and are initialized
-        assert hasattr(symbol, 'imports')
-        assert hasattr(symbol, 'exports')
-        assert hasattr(symbol, 'references')
-        assert hasattr(symbol, 'dependencies')
-        assert hasattr(symbol, 'called_by')
+        assert hasattr(symbol, "imports")
+        assert hasattr(symbol, "exports")
+        assert hasattr(symbol, "references")
+        assert hasattr(symbol, "dependencies")
+        assert hasattr(symbol, "called_by")
 
         # Check they're initialized as empty lists
         assert symbol.imports == []
@@ -50,11 +55,7 @@ class TestSymbolInfoSemanticFields:
 
     def test_symbol_info_semantic_field_operations(self):
         """Test semantic field operations."""
-        symbol = SymbolInfo(
-            type="function",
-            file="test.py",
-            line=1
-        )
+        symbol = SymbolInfo(type="function", file="test.py", line=1)
 
         # Test adding imports
         symbol.imports.append("os")
@@ -103,7 +104,7 @@ class TestSymbolInfoSemanticFields:
             exports=["test_function"],
             dependencies=["helper"],
             called_by=["main"],
-            references=["test.py:10"]
+            references=["test.py:10"],
         )
 
         # Verify all fields are set correctly
@@ -143,7 +144,7 @@ class TestSymbolInfoSemanticFields:
             file="test.py",
             line=1,
             signature="def old_function()",
-            docstring="Old style function"
+            docstring="Old style function",
         )
 
         # Test existing called_by functionality

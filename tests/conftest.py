@@ -9,10 +9,10 @@ import sys
 import tempfile
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 @pytest.fixture(scope="session")
@@ -22,7 +22,8 @@ def sample_project_structure():
         project_path = Path(temp_dir)
 
         # Create Python files
-        (project_path / "main.py").write_text('''
+        (project_path / "main.py").write_text(
+            '''
 #!/usr/bin/env python3
 """Main module for the application."""
 
@@ -52,9 +53,11 @@ class ApplicationManager:
 
 if __name__ == "__main__":
     sys.exit(main())
-''')
+'''
+        )
 
-        (project_path / "utils.py").write_text('''
+        (project_path / "utils.py").write_text(
+            '''
 """Utility functions."""
 
 from typing import Any, Dict, List
@@ -80,10 +83,12 @@ class Logger:
     def error(self, message: str) -> None:
         """Log error message."""
         print(f"[ERROR] {self.name}: {message}")
-''')
+'''
+        )
 
         # Create JavaScript files
-        (project_path / "app.js").write_text('''
+        (project_path / "app.js").write_text(
+            """
 /**
  * Main application module
  */
@@ -122,10 +127,12 @@ class Server {
 }
 
 module.exports = { createApp, Server };
-''')
+"""
+        )
 
         # Create TypeScript files
-        (project_path / "types.ts").write_text('''
+        (project_path / "types.ts").write_text(
+            """
 /**
  * Type definitions for the application
  */
@@ -166,10 +173,12 @@ export class UserManager {
 export function createApiResponse<T>(data: T, success: boolean = true): ApiResponse<T> {
     return { data, success };
 }
-''')
+"""
+        )
 
         # Create config files
-        (project_path / "package.json").write_text('''
+        (project_path / "package.json").write_text(
+            """
 {
   "name": "test-project",
   "version": "1.0.0",
@@ -183,9 +192,11 @@ export function createApiResponse<T>(data: T, success: boolean = true): ApiRespo
     "express": "^4.18.0"
   }
 }
-''')
+"""
+        )
 
-        (project_path / "README.md").write_text('''
+        (project_path / "README.md").write_text(
+            """
 # Test Project
 
 This is a sample project for testing the code indexing functionality.
@@ -203,7 +214,8 @@ This is a sample project for testing the code indexing functionality.
 - `utils.py` - Utility functions and classes
 - `app.js` - Express.js server
 - `types.ts` - TypeScript type definitions
-''')
+"""
+        )
 
         yield project_path
 
@@ -244,14 +256,16 @@ def minimal_python_project():
         project_path = Path(temp_dir)
 
         # Single Python file
-        (project_path / "simple.py").write_text('''
+        (project_path / "simple.py").write_text(
+            """
 def hello():
     return "Hello"
 
 class Simple:
     def method(self):
         return 42
-''')
+"""
+        )
 
         yield project_path
 
@@ -259,15 +273,9 @@ class Simple:
 # Pytest configuration
 def pytest_configure(config):
     """Configure pytest with custom markers."""
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
-    config.addinivalue_line(
-        "markers", "unit: marks tests as unit tests"
-    )
-    config.addinivalue_line(
-        "markers", "slow: marks tests as slow running"
-    )
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "unit: marks tests as unit tests")
+    config.addinivalue_line("markers", "slow: marks tests as slow running")
 
 
 def pytest_collection_modifyitems(config, items):

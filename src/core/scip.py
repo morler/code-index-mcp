@@ -139,10 +139,14 @@ class SCIPSymbolManager:
 
         for document in self.documents.values():
             for occurrence in document.occurrences:
-                if occurrence.symbol_id == symbol_id and occurrence.occurrence_type in [
-                    "definition",
-                    "declaration",
-                ]:
+                if (
+                    occurrence.symbol_id == symbol_id
+                    and occurrence.occurrence_type
+                    in [
+                        "definition",
+                        "declaration",
+                    ]
+                ):
                     definitions.append(occurrence)
 
         return definitions

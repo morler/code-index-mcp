@@ -33,7 +33,9 @@ def test_basic_functionality():
     # Test search
     query = SearchQuery(pattern="def ", type="text")
     result = index.search(query)
-    print(f"✅ Search completed: {result.total_count} matches in {result.search_time:.3f}s")
+    print(
+        f"✅ Search completed: {result.total_count} matches in {result.search_time:.3f}s"
+    )
 
     # Test file pattern matching
     files = index.find_files_by_pattern("*.py")
@@ -82,6 +84,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

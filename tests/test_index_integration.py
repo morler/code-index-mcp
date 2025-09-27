@@ -7,7 +7,6 @@ Following Linus's principle: "Never break userspace."
 import tempfile
 import pytest
 from pathlib import Path
-from typing import Dict, Any
 
 from src.code_index_mcp.indexing.json_index_manager import JSONIndexManager
 from src.code_index_mcp.tools.config.project_config_tool import ProjectConfigTool
@@ -25,7 +24,8 @@ class TestIndexBuildingIntegration:
 
             # Create Python files with various patterns
             (project_path / "core" / "main.py").parent.mkdir(exist_ok=True)
-            (project_path / "core" / "main.py").write_text('''
+            (project_path / "core" / "main.py").write_text(
+                '''
 #!/usr/bin/env python3
 """Main application module."""
 
@@ -111,11 +111,13 @@ async def main() -> int:
 
 if __name__ == "__main__":
     asyncio.run(main())
-''')
+'''
+            )
 
             # Create TypeScript files
             (project_path / "frontend" / "api.ts").parent.mkdir(exist_ok=True)
-            (project_path / "frontend" / "api.ts").write_text('''
+            (project_path / "frontend" / "api.ts").write_text(
+                """
 /**
  * API client for backend communication
  */
@@ -227,11 +229,13 @@ export class ApiClient {
 export function createApiClient(baseUrl: string): ApiClient {
     return new ApiClient(baseUrl);
 }
-''')
+"""
+            )
 
             # Create JavaScript files
             (project_path / "utils" / "helpers.js").parent.mkdir(exist_ok=True)
-            (project_path / "utils" / "helpers.js").write_text('''
+            (project_path / "utils" / "helpers.js").write_text(
+                """
 /**
  * Utility functions for common operations
  */
@@ -353,10 +357,12 @@ module.exports = {
     debounce,
     FileUtils,
 };
-''')
+"""
+            )
 
             # Create configuration files
-            (project_path / "package.json").write_text('''
+            (project_path / "package.json").write_text(
+                """
 {
   "name": "complex-test-project",
   "version": "1.0.0",
@@ -383,7 +389,8 @@ module.exports = {
     "webpack": "^5.0.0"
   }
 }
-''')
+"""
+            )
 
             yield project_path
 
@@ -438,7 +445,7 @@ module.exports = {
 
         assert result["status"] == "success"
         assert result["files_processed"] >= 4  # Python, TypeScript, JavaScript, JSON
-        assert result["symbols_found"] >= 20   # Multiple classes, functions, interfaces
+        assert result["symbols_found"] >= 20  # Multiple classes, functions, interfaces
 
         # Verify symbol diversity
         index_data = config_tool.load_existing_index()
@@ -477,7 +484,8 @@ module.exports = {
 
         # Add a new file
         new_file = complex_project / "new_module.py"
-        new_file.write_text('''
+        new_file.write_text(
+            '''
 def new_function():
     """A new function."""
     return "new"
@@ -485,7 +493,8 @@ def new_function():
 class NewClass:
     """A new class."""
     pass
-''')
+'''
+        )
 
         # Second build should detect the new file
         result2 = index_manager.build_index()
@@ -504,6 +513,7 @@ class NewClass:
         index_manager.set_project_path(project_path)
 
         import time
+
         start_time = time.time()
         result = index_manager.build_index()
         end_time = time.time()
@@ -524,7 +534,8 @@ class NewClass:
 
         # Create a file with syntax errors
         invalid_file = complex_project / "invalid.py"
-        invalid_file.write_text('''
+        invalid_file.write_text(
+            """
 def broken_function(
     # Missing closing parenthesis and colon
     return "this will not parse"
@@ -534,7 +545,8 @@ class BrokenClass
     def method(self)
         # Missing colon
         pass
-''')
+"""
+        )
 
         config_tool = ProjectConfigTool()
         config_tool.initialize_settings(project_path)
@@ -559,7 +571,8 @@ class BrokenClass
                 module_dir.mkdir(exist_ok=True)
 
                 file_path = module_dir / f"file_{i}.py"
-                file_path.write_text(f'''
+                file_path.write_text(
+                    f'''
 """Module {i} - Auto-generated for testing."""
 
 def function_{i}():
@@ -576,7 +589,8 @@ class Class_{i}:
 # Variables and constants
 VALUE_{i} = {i}
 STRING_{i} = "value_{i}"
-''')
+'''
+                )
 
             config_tool = ProjectConfigTool()
             config_tool.initialize_project(str(project_path))
@@ -584,6 +598,7 @@ STRING_{i} = "value_{i}"
             index_manager = UnifiedIndexManager(str(project_path))
 
             import time
+
             start_time = time.time()
             result = index_manager.build_index()
             end_time = time.time()

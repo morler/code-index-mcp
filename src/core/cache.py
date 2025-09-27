@@ -235,7 +235,7 @@ class OptimizedFileCache:
         # 定期检查系统内存压力
         if current_time - self._last_memory_check > self._memory_check_interval:
             self._check_system_memory_pressure()
-            self._last_memory_check = current_time
+            self._last_memory_check = int(current_time)
 
         # 检查缓存大小限制
         if len(self._cache) > self._max_size * self._cleanup_threshold:
@@ -551,11 +551,11 @@ class OptimizedFileCache:
         return {
             "recent_accesses_last_hour": recent_accesses,
             "active_files_last_hour": active_files,
-            "cache_efficiency": "HIGH"
-            if self._calculate_hit_ratio() > 0.8
-            else "MEDIUM"
-            if self._calculate_hit_ratio() > 0.6
-            else "LOW",
+            "cache_efficiency": (
+                "HIGH"
+                if self._calculate_hit_ratio() > 0.8
+                else "MEDIUM" if self._calculate_hit_ratio() > 0.6 else "LOW"
+            ),
         }
 
     def clear_cache(self) -> None:

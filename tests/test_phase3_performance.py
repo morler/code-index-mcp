@@ -4,7 +4,7 @@ Phase 3 Performance Test - Linus式性能验证
 
 测试第3阶段优化效果：
 1. 搜索性能对比
-2. 内存使用分析  
+2. 内存使用分析
 3. 工具函数响应时间
 """
 
@@ -13,7 +13,7 @@ import sys
 import os
 
 # 添加src到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from core.index import CodeIndex, SearchQuery, FileInfo, SymbolInfo
 from core.search import SearchEngine
@@ -30,9 +30,12 @@ def create_test_index() -> CodeIndex:
         file_info = FileInfo(
             language="python",
             line_count=50 + i,
-            symbols={"functions": [f"func_{i}_1", f"func_{i}_2"], "classes": [f"Class_{i}"]},
+            symbols={
+                "functions": [f"func_{i}_1", f"func_{i}_2"],
+                "classes": [f"Class_{i}"],
+            },
             imports=[f"import module_{i}"],
-            exports=[f"export_{i}"]
+            exports=[f"export_{i}"],
         )
         index.add_file(file_path, file_info)
 
@@ -45,7 +48,7 @@ def create_test_index() -> CodeIndex:
             line=10 + i % 50,
             signature=f"def {symbol_name}():",
             called_by=[f"caller_{j}" for j in range(i % 5)],
-            references=[f"ref_file_{j}.py:{j + 10}" for j in range(i % 3)]
+            references=[f"ref_file_{j}.py:{j + 10}" for j in range(i % 3)],
         )
         index.add_symbol(symbol_name, symbol_info)
 
@@ -81,9 +84,11 @@ def benchmark_search_engines():
         optimized_time = time.time() - start_time
 
         # 输出结果
-        speedup = original_time / optimized_time if optimized_time > 0 else float('inf')
+        speedup = original_time / optimized_time if optimized_time > 0 else float("inf")
         print(f"  原始引擎: {original_time:.4f}s ({original_result.total_count} 结果)")
-        print(f"  优化引擎: {optimized_time:.4f}s ({optimized_result.total_count} 结果)")
+        print(
+            f"  优化引擎: {optimized_time:.4f}s ({optimized_result.total_count} 结果)"
+        )
         print(f"  性能提升: {speedup:.2f}x")
 
 
@@ -123,6 +128,7 @@ def memory_usage_test():
 
     try:
         import psutil
+
         process = psutil.Process()
 
         # 基准内存
@@ -145,13 +151,19 @@ def memory_usage_test():
 
         after_search_memory = process.memory_info().rss / 1024 / 1024
 
-        print(f"索引后内存: {after_index_memory:.2f} MB (+{after_index_memory - baseline_memory:.2f} MB)")
-        print(f"搜索后内存: {after_search_memory:.2f} MB (+{after_search_memory - after_index_memory:.2f} MB)")
+        print(
+            f"索引后内存: {after_index_memory:.2f} MB (+{after_index_memory - baseline_memory:.2f} MB)"
+        )
+        print(
+            f"搜索后内存: {after_search_memory:.2f} MB (+{after_search_memory - after_index_memory:.2f} MB)"
+        )
 
         # 清理缓存测试
         optimized_engine.clear_cache()
         after_clear_memory = process.memory_info().rss / 1024 / 1024
-        print(f"清理后内存: {after_clear_memory:.2f} MB ({after_clear_memory - after_search_memory:+.2f} MB)")
+        print(
+            f"清理后内存: {after_clear_memory:.2f} MB ({after_clear_memory - after_search_memory:+.2f} MB)"
+        )
 
     except ImportError:
         print("psutil未安装，跳过内存测试")
@@ -162,12 +174,16 @@ def validate_phase3_goals():
     print("\n=== 第3阶段目标验证 ===")
 
     # 代码行数统计
-    core_files = ['src/core/index.py', 'src/core/search_optimized.py', 'src/core/mcp_tools.py']
+    core_files = [
+        "src/core/index.py",
+        "src/core/search_optimized.py",
+        "src/core/mcp_tools.py",
+    ]
     total_lines = 0
 
     for file_path in core_files:
         if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 lines = len(f.readlines())
                 total_lines += lines
                 print(f"  {file_path}: {lines} 行")
@@ -176,6 +192,7 @@ def validate_phase3_goals():
 
     # 工具数量验证
     from core.mcp_tools import MCP_TOOLS
+
     print(f"  统一工具数量: {len(MCP_TOOLS)} 个")
 
     # 特殊情况检查

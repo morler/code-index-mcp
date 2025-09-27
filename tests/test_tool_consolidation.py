@@ -4,7 +4,6 @@
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
 
 
@@ -15,14 +14,16 @@ class TestToolConsolidation:
         """设置测试环境"""
         self.test_dir = tempfile.mkdtemp()
         self.test_file = Path(self.test_dir) / "test.py"
-        self.test_file.write_text("""
+        self.test_file.write_text(
+            """
 def hello_world():
     print("Hello World")
 
 class TestClass:
     def method(self):
         return "test"
-""")
+"""
+        )
 
     def test_core_tools_available(self):
         """测试核心工具可用性"""
@@ -65,7 +66,7 @@ class TestClass:
             tool_set_project_path,
             tool_search_code,
             tool_find_files,
-            tool_get_file_content
+            tool_get_file_content,
         )
 
         # 设置项目
@@ -89,15 +90,8 @@ class TestClass:
         """测试MCP服务器工具注册"""
         # 验证MCP服务器可以正常导入
         from code_index_mcp.server_unified import (
-            unified_tool,
             set_project_path,
             search_code,
-            find_files,
-            get_file_content,
-            get_symbol_body,
-            rename_symbol,
-            add_import,
-            apply_edit
         )
 
         # 基本功能测试
@@ -115,7 +109,9 @@ class TestClass:
         tools = mcp._tools
 
         # 应该只有9个直接注册的工具 + 1个统一工具
-        assert len(tools) == 9, f"Expected 9 tools, got {len(tools)}: {list(tools.keys())}"
+        assert (
+            len(tools) == 9
+        ), f"Expected 9 tools, got {len(tools)}: {list(tools.keys())}"
 
         # 统一工具必须存在
         assert "unified_tool" in tools
@@ -123,6 +119,7 @@ class TestClass:
     def teardown_method(self):
         """清理测试环境"""
         import shutil
+
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
 

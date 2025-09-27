@@ -118,7 +118,7 @@ class CodeIndex:
         """增量更新索引 - Linus原则: 只处理变更文件"""
         from .incremental import get_incremental_indexer
 
-        return get_incremental_indexer().update_index(root_path)
+        return get_incremental_indexer().update_index(root_path or self.base_path)
 
     def force_update_file(self, file_path: str) -> bool:
         """强制更新指定文件 - 忽略变更检测"""
@@ -272,7 +272,9 @@ class CodeIndex:
                 if old_content.strip() not in current_content:
                     return False, f"Content not found in {file_path}"
                 # 精确替换 - 限制替换次数防止重复
-                final_content = current_content.replace(old_content.strip(), new_content, 1)
+                final_content = current_content.replace(
+                    old_content.strip(), new_content, 1
+                )
             else:
                 # 全文替换
                 final_content = new_content
@@ -328,9 +330,9 @@ class CodeIndex:
         """10行代码搞定，不需要100行"""
         # 简单粗暴但正确: 先写临时文件，再原子性移动
         for i, edit in enumerate(batch_edit.operations):
-            temp_file = Path(batch_edit.temp_dir) / f"temp_{i}.tmp"
+            temp_file = Path(batch_edit.temp_dir or "/tmp") / f"temp_{i}.tmp"
 
-                        # 处理内容替换 - 限制替换次数防止重复
+            # 处理内容替换 - 限制替换次数防止重复
             if edit.old_content and edit.old_content.strip():
                 current_content = Path(edit.file_path).read_text(encoding="utf-8")
                 final_content = current_content.replace(
@@ -344,7 +346,7 @@ class CodeIndex:
 
         # 原子性批量移动 - 要么全成功要么全失败
         for edit in batch_edit.operations:
-            shutil.move(edit._temp_path, edit.file_path)
+            shutil.move(edit._temp_path or "", edit.file_path)
 
     def _batch_update_index(self, file_paths: List[str]) -> None:
         """批量索引更新 - 事务结束后统一更新"""
@@ -471,20 +473,24 @@ class CodeIndex:
         """启动/停止自动文件监控索引 - 统一开关"""
         if enable:
             from .watcher import start_auto_indexing
+
             return start_auto_indexing(self)
         else:
             from .watcher import stop_auto_indexing
+
             stop_auto_indexing()
             return True
 
     def is_auto_indexing_active(self) -> bool:
         """检查自动索引是否活跃"""
         from .watcher import is_auto_indexing_active
+
         return is_auto_indexing_active()
 
     def get_watcher_stats(self) -> dict:
         """获取文件监控统计信息"""
         from .watcher import get_watcher_stats
+
         return get_watcher_stats()
 
     # SCIP协议方法 - 由integrate_with_code_index添加

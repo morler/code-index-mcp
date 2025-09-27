@@ -8,7 +8,7 @@ Following Linus's "good taste" principle: simple, focused tests.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from code_index_mcp.indexing.models.symbol_info import SymbolInfo
 from code_index_mcp.indexing.json_index_manager import JSONIndexManager
@@ -16,18 +16,25 @@ from code_index_mcp.indexing.json_index_manager import JSONIndexManager
 # Try to import strategies, skip if dependencies are missing
 try:
     from code_index_mcp.indexing.strategies.python_strategy import PythonParsingStrategy
+
     PYTHON_STRATEGY_AVAILABLE = True
 except ImportError:
     PYTHON_STRATEGY_AVAILABLE = False
 
 try:
-    from code_index_mcp.indexing.strategies.javascript_strategy import JavaScriptParsingStrategy
+    from code_index_mcp.indexing.strategies.javascript_strategy import (
+        JavaScriptParsingStrategy,
+    )
+
     JAVASCRIPT_STRATEGY_AVAILABLE = True
 except ImportError:
     JAVASCRIPT_STRATEGY_AVAILABLE = False
 
 try:
-    from code_index_mcp.indexing.strategies.typescript_strategy import TypeScriptParsingStrategy
+    from code_index_mcp.indexing.strategies.typescript_strategy import (
+        TypeScriptParsingStrategy,
+    )
+
     TYPESCRIPT_STRATEGY_AVAILABLE = True
 except ImportError:
     TYPESCRIPT_STRATEGY_AVAILABLE = False
@@ -38,18 +45,14 @@ class TestSymbolInfoSemanticFields:
 
     def test_symbol_info_has_semantic_fields(self):
         """Test that SymbolInfo has all new semantic fields."""
-        symbol = SymbolInfo(
-            type="function",
-            file="test.py",
-            line=1
-        )
+        symbol = SymbolInfo(type="function", file="test.py", line=1)
 
         # Check all semantic fields exist and are initialized
-        assert hasattr(symbol, 'imports')
-        assert hasattr(symbol, 'exports')
-        assert hasattr(symbol, 'references')
-        assert hasattr(symbol, 'dependencies')
-        assert hasattr(symbol, 'called_by')
+        assert hasattr(symbol, "imports")
+        assert hasattr(symbol, "exports")
+        assert hasattr(symbol, "references")
+        assert hasattr(symbol, "dependencies")
+        assert hasattr(symbol, "called_by")
 
         # Check they're initialized as empty lists
         assert symbol.imports == []
@@ -60,11 +63,7 @@ class TestSymbolInfoSemanticFields:
 
     def test_symbol_info_semantic_field_operations(self):
         """Test semantic field operations."""
-        symbol = SymbolInfo(
-            type="function",
-            file="test.py",
-            line=1
-        )
+        symbol = SymbolInfo(type="function", file="test.py", line=1)
 
         # Test adding imports
         symbol.imports.append("os")
@@ -81,7 +80,9 @@ class TestSymbolInfoSemanticFields:
         assert "main" in symbol.called_by
 
 
-@pytest.mark.skipif(not PYTHON_STRATEGY_AVAILABLE, reason="Python strategy dependencies not available")
+@pytest.mark.skipif(
+    not PYTHON_STRATEGY_AVAILABLE, reason="Python strategy dependencies not available"
+)
 class TestPythonSemanticStrategy:
     """Test Python strategy semantic enhancements."""
 
@@ -108,14 +109,14 @@ def test_function():
     def test_python_strategy_tracks_dependencies(self):
         """Test Python strategy tracks function dependencies."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 def helper_function():
     return "helper"
 
 def main_function():
     result = helper_function()
     return result
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.py", content)
 
@@ -132,14 +133,14 @@ def main_function():
     def test_python_strategy_tracks_called_by(self):
         """Test Python strategy tracks called_by relationships."""
         strategy = PythonParsingStrategy()
-        content = '''
+        content = """
 def helper_function():
     return "helper"
 
 def main_function():
     result = helper_function()
     return result
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.py", content)
 
@@ -154,21 +155,24 @@ def main_function():
         assert any("main_function" in caller for caller in helper_symbol.called_by)
 
 
-@pytest.mark.skipif(not JAVASCRIPT_STRATEGY_AVAILABLE, reason="JavaScript strategy dependencies not available")
+@pytest.mark.skipif(
+    not JAVASCRIPT_STRATEGY_AVAILABLE,
+    reason="JavaScript strategy dependencies not available",
+)
 class TestJavaScriptSemanticStrategy:
     """Test JavaScript strategy semantic enhancements."""
 
     def test_javascript_strategy_extracts_imports(self):
         """Test JavaScript strategy extracts import information."""
         strategy = JavaScriptParsingStrategy()
-        content = '''
+        content = """
 import { Component } from 'react';
 import axios from 'axios';
 
 function testFunction() {
     return Component;
 }
-'''
+"""
 
         symbols, file_info = strategy.parse_file("test.js", content)
 
@@ -178,7 +182,7 @@ function testFunction() {
     def test_javascript_strategy_tracks_function_calls(self):
         """Test JavaScript strategy tracks function call relationships."""
         strategy = JavaScriptParsingStrategy()
-        content = '''
+        content = """
 function helperFunction() {
     return "helper";
 }
@@ -187,7 +191,7 @@ function mainFunction() {
     const result = helperFunction();
     return result;
 }
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.js", content)
 
@@ -203,24 +207,27 @@ function mainFunction() {
 
         assert main_symbol is not None
         # JavaScript semantic analysis should track dependencies
-        assert hasattr(main_symbol, 'dependencies')
+        assert hasattr(main_symbol, "dependencies")
 
 
-@pytest.mark.skipif(not TYPESCRIPT_STRATEGY_AVAILABLE, reason="TypeScript strategy dependencies not available")
+@pytest.mark.skipif(
+    not TYPESCRIPT_STRATEGY_AVAILABLE,
+    reason="TypeScript strategy dependencies not available",
+)
 class TestTypeScriptSemanticStrategy:
     """Test TypeScript strategy semantic enhancements."""
 
     def test_typescript_strategy_extracts_imports(self):
         """Test TypeScript strategy extracts import information."""
         strategy = TypeScriptParsingStrategy()
-        content = '''
+        content = """
 import { Component } from 'react';
 import type { User } from './types';
 
 function testFunction(): string {
     return "test";
 }
-'''
+"""
 
         symbols, file_info = strategy.parse_file("test.ts", content)
 
@@ -230,7 +237,7 @@ function testFunction(): string {
     def test_typescript_strategy_tracks_dependencies(self):
         """Test TypeScript strategy tracks function dependencies."""
         strategy = TypeScriptParsingStrategy()
-        content = '''
+        content = """
 function helperFunction(): string {
     return "helper";
 }
@@ -239,7 +246,7 @@ function mainFunction(): string {
     const result = helperFunction();
     return result;
 }
-'''
+"""
 
         symbols, _ = strategy.parse_file("test.ts", content)
 
@@ -248,8 +255,8 @@ function mainFunction(): string {
 
         # Check for semantic fields
         for symbol_id, symbol in symbols.items():
-            assert hasattr(symbol, 'dependencies')
-            assert hasattr(symbol, 'called_by')
+            assert hasattr(symbol, "dependencies")
+            assert hasattr(symbol, "called_by")
 
 
 class TestJSONIndexManagerSemanticMethods:
@@ -269,14 +276,14 @@ class TestJSONIndexManagerSemanticMethods:
                     "file": "test.py",
                     "line": 1,
                     "called_by": ["test.py::main"],
-                    "references": ["test.py::main"]
+                    "references": ["test.py::main"],
                 },
                 "test.py::main": {
                     "type": "function",
                     "file": "test.py",
                     "line": 10,
-                    "dependencies": ["function1"]
-                }
+                    "dependencies": ["function1"],
+                },
             }
         }
 
@@ -299,14 +306,14 @@ class TestJSONIndexManagerSemanticMethods:
                 "test.py::function1": {
                     "type": "function",
                     "file": "test.py",
-                    "line": 1
+                    "line": 1,
                 },
                 "test.py::main": {
                     "type": "function",
                     "file": "test.py",
                     "line": 10,
-                    "dependencies": ["function1"]
-                }
+                    "dependencies": ["function1"],
+                },
             }
         }
 
@@ -330,14 +337,14 @@ class TestJSONIndexManagerSemanticMethods:
                     "type": "function",
                     "file": "test.py",
                     "line": 1,
-                    "called_by": ["test.py::main"]
+                    "called_by": ["test.py::main"],
                 },
                 "test.py::main": {
                     "type": "function",
                     "file": "test.py",
                     "line": 10,
-                    "dependencies": ["function1"]
-                }
+                    "dependencies": ["function1"],
+                },
             }
         }
 
@@ -365,7 +372,7 @@ class TestJSONIndexManagerSemanticMethods:
                     "file": "test.py",
                     "line": 1,
                     "imports": ["os", "sys"],
-                    "exports": ["default"]
+                    "exports": ["default"],
                 }
             }
         }
@@ -394,7 +401,8 @@ class TestSemanticIndexingIntegration:
             project_path = Path(temp_dir)
 
             # Create a test Python file with semantic relationships
-            (project_path / "main.py").write_text('''
+            (project_path / "main.py").write_text(
+                '''
 import os
 import sys
 from typing import List
@@ -416,7 +424,8 @@ class DataProcessor:
         """Process the data."""
         processed = helper_function([data])
         return processed
-''')
+'''
+            )
 
             # Test with JSONIndexManager
             manager = JSONIndexManager()
@@ -427,7 +436,9 @@ class DataProcessor:
             if manager.load_index():
                 # Test finding references
                 references = manager.find_symbol_references("helper_function")
-                assert len(references) >= 0  # May or may not find depending on implementation
+                assert (
+                    len(references) >= 0
+                )  # May or may not find depending on implementation
 
                 # Test building relationship graph
                 graph = manager.build_symbol_relationship_graph()

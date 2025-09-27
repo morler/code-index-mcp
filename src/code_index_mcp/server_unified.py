@@ -7,7 +7,7 @@ Code Index MCP Server - Linus式极简实现
 
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -55,8 +55,8 @@ def find_files(pattern: str) -> Dict[str, Any]:
 @mcp.tool()
 def get_file_content(
     file_path: str,
-    start_line: int = None,
-    end_line: int = None,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
     show_line_numbers: bool = False,
 ) -> Dict[str, Any]:
     """获取文件内容 - 支持全文件和特定行范围，可选显示行号"""
@@ -72,7 +72,7 @@ def get_file_content(
 @mcp.tool()
 def get_symbol_body(
     symbol_name: str,
-    file_path: str = None,
+    file_path: Optional[str] = None,
     language: str = "auto",
     show_line_numbers: bool = False,
 ) -> Dict[str, Any]:
