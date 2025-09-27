@@ -5,7 +5,8 @@ Operations - 语义操作模块
 按照plans.md要求独立化操作逻辑
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List
+
 from .index import CodeIndex, SearchQuery
 
 
@@ -23,7 +24,7 @@ class SemanticOperations:
             "symbol": symbol_name,
             "references": result.matches,
             "count": result.total_count,
-            "search_time": result.search_time
+            "search_time": result.search_time,
         }
 
     def find_definition(self, symbol_name: str) -> Dict[str, Any]:
@@ -34,7 +35,7 @@ class SemanticOperations:
             "symbol": symbol_name,
             "definition": result.matches,
             "found": len(result.matches) > 0,
-            "search_time": result.search_time
+            "search_time": result.search_time,
         }
 
     def find_callers(self, function_name: str) -> Dict[str, Any]:
@@ -45,7 +46,7 @@ class SemanticOperations:
             "function": function_name,
             "callers": result.matches,
             "count": result.total_count,
-            "search_time": result.search_time
+            "search_time": result.search_time,
         }
 
     def analyze_symbol_usage(self, symbol_name: str) -> Dict[str, Any]:
@@ -61,7 +62,7 @@ class SemanticOperations:
             "callers": callers["callers"],
             "usage_count": references["count"] + callers["count"],
             "is_defined": definition["found"],
-            "is_used": references["count"] > 0 or callers["count"] > 0
+            "is_used": references["count"] > 0 or callers["count"] > 0,
         }
 
     def detect_unused_symbols(self) -> List[Dict[str, Any]]:
@@ -70,12 +71,14 @@ class SemanticOperations:
         for symbol_name, symbol_info in self.index.symbols.items():
             # 简单检测：没有引用和调用者的符号
             if not symbol_info.references and not symbol_info.called_by:
-                unused.append({
-                    "symbol": symbol_name,
-                    "type": symbol_info.type,
-                    "file": symbol_info.file,
-                    "line": symbol_info.line
-                })
+                unused.append(
+                    {
+                        "symbol": symbol_name,
+                        "type": symbol_info.type,
+                        "file": symbol_info.file,
+                        "line": symbol_info.line,
+                    }
+                )
         return unused
 
     def analyze_file_dependencies(self, file_path: str) -> Dict[str, Any]:
@@ -91,7 +94,7 @@ class SemanticOperations:
             "exports": file_info.exports,
             "symbols": file_info.symbols,
             "language": file_info.language,
-            "lines": file_info.line_count
+            "lines": file_info.line_count,
         }
 
         # 查找使用此文件导出的其他文件

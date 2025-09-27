@@ -4,44 +4,42 @@ Tool Registry - 工具注册表
 从mcp_tools.py拆分，保持文件<200行原则
 """
 
-from typing import Dict, Any, Callable
+from typing import Any, Callable, Dict
 
 
 # 导入所有工具函数
 def _import_tools():
     """延迟导入避免循环依赖"""
     from .mcp_tools import (
-        tool_set_project_path,
-        tool_search_code,
-        tool_find_files,
-        tool_get_file_summary,
-        tool_get_file_content,
-        tool_get_symbol_body,
-        tool_get_index_stats,
-        tool_semantic_search,
-        tool_find_references,
-        tool_find_definition,
-        tool_find_callers,
-        tool_find_implementations,
-        tool_find_hierarchy,
-        tool_organize_imports,
-        tool_refresh_index,
-        tool_check_file_exists,
-        tool_rename_symbol,
-        tool_add_import,
+        tool_add_import,  # 增量索引工具; SCIP协议工具
         tool_apply_edit,
-        # 增量索引工具
-        tool_update_incrementally,
-        tool_force_update_file,
-        tool_get_changed_files,
-        tool_full_rebuild_index,
-        # SCIP协议工具
-        tool_generate_scip_symbol_id,
-        tool_find_scip_symbol,
-        tool_get_cross_references,
-        tool_get_symbol_graph,
+        tool_check_file_exists,
         tool_export_scip_index,
+        tool_find_callers,
+        tool_find_definition,
+        tool_find_files,
+        tool_find_hierarchy,
+        tool_find_implementations,
+        tool_find_references,
+        tool_find_scip_symbol,
+        tool_force_update_file,
+        tool_full_rebuild_index,
+        tool_generate_scip_symbol_id,
+        tool_get_changed_files,
+        tool_get_cross_references,
+        tool_get_file_content,
+        tool_get_file_summary,
+        tool_get_index_stats,
+        tool_get_symbol_body,
+        tool_get_symbol_graph,
+        tool_organize_imports,
         tool_process_file_with_scip,
+        tool_refresh_index,
+        tool_rename_symbol,
+        tool_search_code,
+        tool_semantic_search,
+        tool_set_project_path,
+        tool_update_incrementally,
     )
 
     return {

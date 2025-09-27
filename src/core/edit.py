@@ -16,21 +16,21 @@ DEPRECATED: 此文件已弃用
 请使用: index.edit_file_atomic() 等新方法
 """
 
-from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Tuple
-import os
 import re
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional, Tuple
 
-from .index import get_index, SearchQuery
 from .builder import handle_edit_errors
+from .index import SearchQuery, get_index
 
 
 @dataclass
 class EditOperation:
     """编辑操作 - 纯数据，无方法"""
+
     file_path: str
     old_content: str
     new_content: str
@@ -41,6 +41,7 @@ class EditOperation:
 @dataclass
 class EditResult:
     """编辑结果 - 直接数据访问"""
+
     success: bool
     operations: List[EditOperation]
     error: Optional[str] = None
@@ -66,22 +67,26 @@ def rename_symbol(old_name: str, new_name: str) -> EditResult:
 
         # 使用统一路径解析
         base_path = Path(index.base_path) if index.base_path else Path.cwd()
-        full_path = Path(file_path) if Path(file_path).is_absolute() else base_path / file_path
+        full_path = (
+            Path(file_path) if Path(file_path).is_absolute() else base_path / file_path
+        )
         if not full_path.exists():
             continue
 
         # 读取原始内容
-        old_content = full_path.read_text(encoding='utf-8')
+        old_content = full_path.read_text(encoding="utf-8")
 
         # 简单替换 - 可扩展为AST操作
-        new_content = re.sub(r'\b' + re.escape(old_name) + r'\b', new_name, old_content)
+        new_content = re.sub(r"\b" + re.escape(old_name) + r"\b", new_name, old_content)
 
         if old_content != new_content:
-            operations.append(EditOperation(
-                file_path=str(full_path),
-                old_content=old_content,
-                new_content=new_content
-            ))
+            operations.append(
+                EditOperation(
+                    file_path=str(full_path),
+                    old_content=old_content,
+                    new_content=new_content,
+                )
+            )
 
     return EditResult(True, operations, files_changed=len(operations))
 
@@ -93,7 +98,7 @@ def add_import(file_path: str, import_statement: str) -> EditResult:
     if not full_path.exists():
         return EditResult(False, [], f"File not found: {file_path}")
 
-    old_content = full_path.read_text(encoding='utf-8')
+    old_content = full_path.read_text(encoding="utf-8")
 
     # 检查是否已存在
     if import_statement in old_content:
@@ -105,16 +110,14 @@ def add_import(file_path: str, import_statement: str) -> EditResult:
     # 找到导入区域
     insert_pos = 0
     for i, line in enumerate(lines):
-        if line.strip().startswith(('import ', 'from ')):
+        if line.strip().startswith(("import ", "from ")):
             insert_pos = i + 1
 
     lines.insert(insert_pos, import_statement)
-    new_content = '\n'.join(lines)
+    new_content = "\n".join(lines)
 
     op = EditOperation(
-        file_path=str(full_path),
-        old_content=old_content,
-        new_content=new_content
+        file_path=str(full_path), old_content=old_content, new_content=new_content
     )
 
     # 立即应用编辑
@@ -136,7 +139,7 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
 
         # 2. 读取当前文件内容验证
         try:
-            current_content = file_path.read_text(encoding='utf-8')
+            current_content = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError as e:
             return False, f"File encoding error: {e}"
         except PermissionError:
@@ -163,12 +166,17 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
                     for line in lines:
                         if old_stripped not in line:
                             new_lines.append(line)
-                    operation.new_content = '\n'.join(new_lines)
+                    operation.new_content = "\n".join(new_lines)
                 else:
                     # 替换操作：在当前内容中替换匹配的部分
-                    operation.new_content = current_content.replace(old_stripped, operation.new_content.strip())
+                    operation.new_content = current_content.replace(
+                        old_stripped, operation.new_content.strip()
+                    )
             else:
-                return False, f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}"
+                return (
+                    False,
+                    f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}",
+                )
 
         # 4. 创建备份
         if operation.backup_path is None:
@@ -181,16 +189,22 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
         try:
             shutil.copy2(operation.file_path, operation.backup_path)
         except PermissionError:
-            return False, f"Cannot create backup: permission denied for {operation.backup_path}"
+            return (
+                False,
+                f"Cannot create backup: permission denied for {operation.backup_path}",
+            )
         except OSError as e:
             return False, f"Backup creation failed: {e}"
 
         # 5. 写入新内容
         try:
-            file_path.write_text(operation.new_content, encoding='utf-8')
+            file_path.write_text(operation.new_content, encoding="utf-8")
             return True, None
         except PermissionError:
-            return False, f"Cannot write file: permission denied for {operation.file_path}"
+            return (
+                False,
+                f"Cannot write file: permission denied for {operation.file_path}",
+            )
         except OSError as e:
             return False, f"Write operation failed: {e}"
 
@@ -211,13 +225,14 @@ def rollback_edit(operation: EditOperation) -> bool:
 
 def _validate_symbol_name(name: str) -> bool:
     """验证符号名 - 简单正则"""
-    return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name.strip())) if name else False
+    return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name.strip())) if name else False
 
 
 def _generate_diff(old_content: str, new_content: str) -> str:
     """生成差异 - 标准库实现"""
     import difflib
+
     old_lines = old_content.splitlines(keepends=True)
     new_lines = new_content.splitlines(keepends=True)
 
-    return ''.join(difflib.unified_diff(old_lines, new_lines))
+    return "".join(difflib.unified_diff(old_lines, new_lines))

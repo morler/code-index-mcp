@@ -7,14 +7,13 @@ Search Engine - Linus式性能优化版本
 3. 早期终止 - 减少无效计算
 """
 
-from typing import Dict, List, Any, Optional
-import time
 import re
-from pathlib import Path
+import time
 from functools import lru_cache
+from typing import Any, Dict, List, Optional
 
-from .index import SearchQuery, SearchResult, CodeIndex
 from .cache import get_file_cache
+from .index import CodeIndex, SearchQuery, SearchResult
 
 
 @lru_cache(maxsize=500)
@@ -47,7 +46,7 @@ class OptimizedSearchEngine:
             "definition": self._find_definition_direct,
             "callers": self._find_callers_direct,
             "implementations": self._find_implementations_direct,
-            "hierarchy": self._find_hierarchy_direct
+            "hierarchy": self._find_hierarchy_direct,
         }
 
         search_method = search_ops.get(query.type, lambda q: [])
@@ -56,7 +55,7 @@ class OptimizedSearchEngine:
         return SearchResult(
             matches=matches,
             total_count=len(matches),
-            search_time=time.time() - start_time
+            search_time=time.time() - start_time,
         )
 
     def _get_file_lines(self, file_path: str) -> List[str]:
@@ -74,19 +73,23 @@ class OptimizedSearchEngine:
 
         for file_path, file_info in self.index.files.items():
             # 文件模式过滤
-            if query.file_pattern and not self._match_file_pattern(file_path, query.file_pattern):
+            if query.file_pattern and not self._match_file_pattern(
+                file_path, query.file_pattern
+            ):
                 continue
 
             lines = self._get_file_lines(file_path)
             for line_num, line in enumerate(lines, 1):
                 search_line = line.lower() if not query.case_sensitive else line
                 if pattern in search_line:
-                    matches.append({
-                        "file": file_path,
-                        "line": line_num,
-                        "content": line.strip(),
-                        "language": file_info.language
-                    })
+                    matches.append(
+                        {
+                            "file": file_path,
+                            "line": line_num,
+                            "content": line.strip(),
+                            "language": file_info.language,
+                        }
+                    )
         return matches
 
     def _search_regex_optimized(self, query: SearchQuery) -> List[Dict[str, Any]]:
@@ -97,18 +100,22 @@ class OptimizedSearchEngine:
 
         matches = []
         for file_path, file_info in self.index.files.items():
-            if query.file_pattern and not self._match_file_pattern(file_path, query.file_pattern):
+            if query.file_pattern and not self._match_file_pattern(
+                file_path, query.file_pattern
+            ):
                 continue
 
             lines = self._get_file_lines(file_path)
             for line_num, line in enumerate(lines, 1):
                 if regex.search(line):
-                    matches.append({
-                        "file": file_path,
-                        "line": line_num,
-                        "content": line.strip(),
-                        "language": file_info.language
-                    })
+                    matches.append(
+                        {
+                            "file": file_path,
+                            "line": line_num,
+                            "content": line.strip(),
+                            "language": file_info.language,
+                        }
+                    )
         return matches
 
     def _search_symbol_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
@@ -117,44 +124,54 @@ class OptimizedSearchEngine:
         matches = []
 
         for symbol_name, symbol_info in self.index.symbols.items():
-            search_name = symbol_name.lower() if not query.case_sensitive else symbol_name
+            search_name = (
+                symbol_name.lower() if not query.case_sensitive else symbol_name
+            )
             if pattern in search_name:
-                matches.append({
-                    "symbol": symbol_name,
-                    "type": symbol_info.type,
-                    "file": symbol_info.file,
-                    "line": symbol_info.line
-                })
+                matches.append(
+                    {
+                        "symbol": symbol_name,
+                        "type": symbol_info.type,
+                        "file": symbol_info.file,
+                        "line": symbol_info.line,
+                    }
+                )
         return matches
 
     def _find_references_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """语义搜索 - 委托给语义操作模块"""
         from .semantic_ops import SemanticOperations
+
         return SemanticOperations(self.index).find_references_direct(query)
 
     def _find_definition_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """语义搜索 - 委托给语义操作模块"""
         from .semantic_ops import SemanticOperations
+
         return SemanticOperations(self.index).find_definition_direct(query)
 
     def _find_callers_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """语义搜索 - 委托给语义操作模块"""
         from .semantic_ops import SemanticOperations
+
         return SemanticOperations(self.index).find_callers_direct(query)
 
     def _find_implementations_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """语义搜索 - 委托给语义操作模块"""
         from .semantic_ops import SemanticOperations
+
         return SemanticOperations(self.index).find_implementations_direct(query)
 
     def _find_hierarchy_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """语义搜索 - 委托给语义操作模块"""
         from .semantic_ops import SemanticOperations
+
         return SemanticOperations(self.index).find_hierarchy_direct(query)
 
     def _match_file_pattern(self, file_path: str, pattern: str) -> bool:
         """文件模式匹配 - 简单实现"""
         import fnmatch
+
         return fnmatch.fnmatch(file_path, pattern)
 
     def clear_cache(self):
@@ -171,6 +188,6 @@ class OptimizedSearchEngine:
                 "hits": regex_info.hits,
                 "misses": regex_info.misses,
                 "current_size": regex_info.currsize,
-                "max_size": regex_info.maxsize
-            }
+                "max_size": regex_info.maxsize,
+            },
         }

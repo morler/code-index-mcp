@@ -5,17 +5,19 @@ MCP Tools - Linus式统一工具实现
 直接操作数据，无包装器，无特殊情况
 """
 
-from typing import Dict, Any, List, Optional
-import time
-import os
 import errno
+import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from .index import get_index, set_project_path as core_set_project_path, SearchQuery
 from .builder import handle_mcp_errors
+from .index import SearchQuery, get_index
+from .index import set_project_path as core_set_project_path
 
 # 向后兼容 - 导出execute_tool
 from .tool_registry import execute_tool
+
+__all__ = ["execute_tool"]
 
 
 def _create_error_response(error: Exception, context: str = "") -> Dict[str, Any]:
@@ -25,11 +27,17 @@ def _create_error_response(error: Exception, context: str = "") -> Dict[str, Any
     elif isinstance(error, PermissionError):
         return {"success": False, "error": f"Permission denied: {error.filename}"}
     elif isinstance(error, OSError) and error.errno == errno.ENOENT:
-        return {"success": False, "error": f"Directory does not exist: {error.filename}"}
+        return {
+            "success": False,
+            "error": f"Directory does not exist: {error.filename}",
+        }
     elif isinstance(error, OSError) and error.errno == errno.EACCES:
         return {"success": False, "error": f"Access denied: {error.filename}"}
     elif isinstance(error, UnicodeDecodeError):
-        return {"success": False, "error": f"File encoding error: cannot decode {error.object}"}
+        return {
+            "success": False,
+            "error": f"File encoding error: cannot decode {error.object}",
+        }
     elif isinstance(error, ValueError):
         return {"success": False, "error": f"Invalid value: {str(error)}"}
     else:
@@ -51,6 +59,7 @@ def _resolve_file_path(base_path: Optional[str], file_path: str) -> Path:
 
 # ----- 核心工具 - 直接数据操作 -----
 
+
 @handle_mcp_errors
 def tool_set_project_path(path: str) -> Dict[str, Any]:
     """设置项目路径 - 直接操作"""
@@ -59,21 +68,24 @@ def tool_set_project_path(path: str) -> Dict[str, Any]:
         "success": True,
         "path": path,
         "files_indexed": len(index.files),
-        "symbols_indexed": len(index.symbols)
+        "symbols_indexed": len(index.symbols),
     }
 
 
 @handle_mcp_errors
-def tool_search_code(pattern: str, search_type: str = "text",
-                    file_pattern: Optional[str] = None,
-                    case_sensitive: bool = True) -> Dict[str, Any]:
+def tool_search_code(
+    pattern: str,
+    search_type: str = "text",
+    file_pattern: Optional[str] = None,
+    case_sensitive: bool = True,
+) -> Dict[str, Any]:
     """统一搜索 - 消除特殊情况"""
     index = get_index()
     query = SearchQuery(
         pattern=pattern,
         type=search_type,
         file_pattern=file_pattern,
-        case_sensitive=case_sensitive
+        case_sensitive=case_sensitive,
     )
     result = index.search(query)
     return {
@@ -81,7 +93,7 @@ def tool_search_code(pattern: str, search_type: str = "text",
         "matches": result.matches,
         "total_count": result.total_count,
         "search_time": result.search_time,
-        "query_type": search_type
+        "query_type": search_type,
     }
 
 
@@ -108,7 +120,7 @@ def tool_get_file_summary(file_path: str) -> Dict[str, Any]:
         "line_count": file_info.line_count,
         "symbol_count": sum(len(symbols) for symbols in file_info.symbols.values()),
         "imports": file_info.imports,
-        "exports": file_info.exports
+        "exports": file_info.exports,
     }
 
 
@@ -121,6 +133,7 @@ def tool_get_index_stats() -> Dict[str, Any]:
 
 
 # ----- 语义搜索 - 数据驱动 -----
+
 
 def tool_semantic_search(query: str, search_type: str) -> Dict[str, Any]:
     """统一语义搜索 - 替代所有专门函数"""
@@ -166,11 +179,12 @@ def tool_organize_imports(file_path: str) -> Dict[str, Any]:
         "success": True,
         "original_count": len(file_info.imports),
         "organized_count": len(organized_imports),
-        "organized_imports": organized_imports
+        "organized_imports": organized_imports,
     }
 
 
 # ----- 系统操作 - 最简实现 -----
+
 
 @handle_mcp_errors
 def tool_refresh_index() -> Dict[str, Any]:
@@ -183,14 +197,14 @@ def tool_refresh_index() -> Dict[str, Any]:
     start_time = time.time()
     stats = index.update_incrementally()
     elapsed = time.time() - start_time
-    
+
     return {
         "success": True,
         "files_indexed": len(index.files),
         "symbols_indexed": len(index.symbols),
         "update_stats": stats,
         "update_time": elapsed,
-        "method": "incremental"
+        "method": "incremental",
     }
 
 
@@ -204,14 +218,20 @@ def tool_check_file_exists(file_path: str) -> Dict[str, Any]:
         "success": True,
         "exists": exists,
         "full_path": str(full_path),
-        "in_index": file_path in index.files
+        "in_index": file_path in index.files,
     }
 
 
 # ----- 文件内容读取工具 - Linus式直接访问 -----
 
+
 @handle_mcp_errors
-def tool_get_file_content(file_path: str, start_line: int = None, end_line: int = None, show_line_numbers: bool = False) -> Dict[str, Any]:
+def tool_get_file_content(
+    file_path: str,
+    start_line: int = None,
+    end_line: int = None,
+    show_line_numbers: bool = False,
+) -> Dict[str, Any]:
     """获取文件内容 - 直接操作，零抽象，支持全文件和片段"""
     index = get_index()
 
@@ -222,7 +242,7 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
 
     try:
         # 复用SearchEngine的文件读取逻辑
-        lines = full_path.read_text(encoding='utf-8', errors='ignore').split('\n')
+        lines = full_path.read_text(encoding="utf-8", errors="ignore").split("\n")
 
         # 处理片段请求 - 消除特殊情况
         if start_line is not None:
@@ -247,13 +267,15 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
             "language": language,
             "encoding": "utf-8",
             "start_line": actual_start,
-            "end_line": end_line or len(lines)
+            "end_line": end_line or len(lines),
         }
 
         # 只在需要时添加line_numbers - 消除冗余数据
         if show_line_numbers:
             if start_line is not None:
-                result["line_numbers"] = list(range(start_line, start_line + len(content_lines)))
+                result["line_numbers"] = list(
+                    range(start_line, start_line + len(content_lines))
+                )
             else:
                 result["line_numbers"] = list(range(1, len(lines) + 1))
 
@@ -263,6 +285,7 @@ def tool_get_file_content(file_path: str, start_line: int = None, end_line: int 
 
 
 # ----- 符号语法体提取工具 - Linus式启发式算法 -----
+
 
 def _detect_syntax_body_end(lines: List[str], start_line: int, language: str) -> int:
     """
@@ -276,9 +299,9 @@ def _detect_syntax_body_end(lines: List[str], start_line: int, language: str) ->
     start_idx = start_line - 1  # 转换为0索引
 
     # 语言特定的检测策略
-    if language in ['python']:
+    if language in ["python"]:
         return _detect_python_body_end(lines, start_idx)
-    elif language in ['javascript', 'typescript', 'java', 'c', 'cpp', 'rust', 'go']:
+    elif language in ["javascript", "typescript", "java", "c", "cpp", "rust", "go"]:
         return _detect_brace_body_end(lines, start_idx)
     else:
         # 默认启发式：基于缩进的通用算法
@@ -323,10 +346,10 @@ def _detect_brace_body_end(lines: List[str], start_idx: int) -> int:
         line = lines[i]
 
         for char in line:
-            if char == '{':
+            if char == "{":
                 brace_count += 1
                 found_opening = True
-            elif char == '}':
+            elif char == "}":
                 brace_count -= 1
                 if found_opening and brace_count == 0:
                     return i + 2  # 返回1索引，包含结束大括号的下一行
@@ -360,7 +383,12 @@ def _detect_indent_body_end(lines: List[str], start_idx: int) -> int:
 
 
 @handle_mcp_errors
-def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str = "auto", show_line_numbers: bool = False) -> Dict[str, Any]:
+def tool_get_symbol_body(
+    symbol_name: str,
+    file_path: str = None,
+    language: str = "auto",
+    show_line_numbers: bool = False,
+) -> Dict[str, Any]:
     """
     获取符号完整语法体 - Linus式组合现有功能
 
@@ -388,7 +416,7 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
         if not full_path.exists():
             return {"success": False, "error": f"File not found: {target_file}"}
 
-        lines = full_path.read_text(encoding='utf-8', errors='ignore').split('\n')
+        lines = full_path.read_text(encoding="utf-8", errors="ignore").split("\n")
 
         # 4. 检测语法体边界
         end_line = _detect_syntax_body_end(lines, start_line, language)
@@ -409,12 +437,14 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
             "end_line": end_line,
             "body_lines": body_lines,
             "signature": symbol_info.signature,
-            "total_lines": len(body_lines)
+            "total_lines": len(body_lines),
         }
 
         # 只在需要时添加line_numbers - 消除冗余数据
         if show_line_numbers:
-            result["line_numbers"] = list(range(start_line, start_line + len(body_lines)))
+            result["line_numbers"] = list(
+                range(start_line, start_line + len(body_lines))
+            )
 
         return result
 
@@ -424,6 +454,7 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
 
 # ----- 语义编辑工具 - 新增功能 -----
 
+
 @handle_mcp_errors
 def tool_rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
     """符号重命名 - 原子性事务操作"""
@@ -431,11 +462,7 @@ def tool_rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
         index = get_index()
         success, error, files_changed = index.rename_symbol_atomic(old_name, new_name)
 
-        return {
-            "success": success,
-            "files_changed": files_changed,
-            "error": error
-        }
+        return {"success": success, "files_changed": files_changed, "error": error}
     except Exception as e:
         return _create_error_response(e, "Symbol rename failed")
 
@@ -450,11 +477,10 @@ def tool_add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
         return {
             "success": success,
             "files_changed": 1 if success and error is None else 0,
-            "error": error
+            "error": error,
         }
     except Exception as e:
         return _create_error_response(e, "Add import failed")
-
 
 
 @handle_mcp_errors
@@ -467,13 +493,13 @@ def tool_update_incrementally() -> Dict[str, Any]:
     start_time = time.time()
     stats = index.update_incrementally()
     elapsed = time.time() - start_time
-    
+
     return {
         "success": True,
         "update_stats": stats,
         "update_time": elapsed,
         "files_indexed": len(index.files),
-        "symbols_indexed": len(index.symbols)
+        "symbols_indexed": len(index.symbols),
     }
 
 
@@ -489,7 +515,7 @@ def tool_force_update_file(file_path: str) -> Dict[str, Any]:
         "success": success,
         "file_path": file_path,
         "files_indexed": len(index.files),
-        "symbols_indexed": len(index.symbols)
+        "symbols_indexed": len(index.symbols),
     }
 
 
@@ -502,13 +528,10 @@ def tool_get_changed_files() -> Dict[str, Any]:
 
     changed_files = index.get_changed_files()
     from .incremental import get_incremental_indexer
+
     stats = get_incremental_indexer().get_stats()
-    
-    return {
-        "success": True,
-        "changed_files": changed_files,
-        "stats": stats
-    }
+
+    return {"success": True, "changed_files": changed_files, "stats": stats}
 
 
 @handle_mcp_errors
@@ -522,17 +545,20 @@ def tool_full_rebuild_index() -> Dict[str, Any]:
     start_time = time.time()
     new_index = core_set_project_path(index.base_path)
     elapsed = time.time() - start_time
-    
+
     return {
         "success": True,
         "files_indexed": len(new_index.files),
         "symbols_indexed": len(new_index.symbols),
         "rebuild_time": elapsed,
-        "method": "full_rebuild"
+        "method": "full_rebuild",
     }
 
+
 @handle_mcp_errors
-def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
+def tool_apply_edit(
+    file_path: str, old_content: str, new_content: str
+) -> Dict[str, Any]:
     """应用编辑 - 原子性操作"""
     try:
         index = get_index()
@@ -541,44 +567,47 @@ def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[
         return {
             "success": success,
             "error": error,
-            "files_changed": 1 if success else 0
+            "files_changed": 1 if success else 0,
         }
     except Exception as e:
         return _create_error_response(e, "Apply edit failed")
 
+
 # ----- SCIP协议工具 - Linus风格统一接口 -----
 
+
 @handle_mcp_errors
-def tool_generate_scip_symbol_id(symbol_name: str, file_path: str, 
-                                 language: str, symbol_type: str = "unknown") -> Dict[str, Any]:
+def tool_generate_scip_symbol_id(
+    symbol_name: str, file_path: str, language: str, symbol_type: str = "unknown"
+) -> Dict[str, Any]:
     """生成SCIP标准符号ID"""
     index = get_index()
     if not index.scip_manager:
         return {"success": False, "error": "SCIP manager not initialized"}
-    
+
     symbol_id = index.scip_manager.generate_symbol_id(
         symbol_name, file_path, language, symbol_type
     )
-    
+
     return {
         "success": True,
         "symbol_id": symbol_id,
         "symbol_name": symbol_name,
         "file_path": file_path,
         "language": language,
-        "symbol_type": symbol_type
+        "symbol_type": symbol_type,
     }
 
 
-@handle_mcp_errors  
+@handle_mcp_errors
 def tool_find_scip_symbol(symbol_name: str) -> Dict[str, Any]:
     """查找SCIP符号 - 支持重载和多定义"""
     index = get_index()
-    if not hasattr(index, 'find_scip_symbol'):
+    if not hasattr(index, "find_scip_symbol"):
         return {"success": False, "error": "SCIP integration not available"}
-    
+
     symbols = index.find_scip_symbol(symbol_name)
-    
+
     return {
         "success": True,
         "symbol_name": symbol_name,
@@ -592,11 +621,11 @@ def tool_find_scip_symbol(symbol_name: str) -> Dict[str, Any]:
                 "column": sym.column,
                 "symbol_type": sym.symbol_type,
                 "signature": sym.signature,
-                "documentation": sym.documentation
+                "documentation": sym.documentation,
             }
             for sym in symbols
         ],
-        "match_count": len(symbols)
+        "match_count": len(symbols),
     }
 
 
@@ -604,34 +633,36 @@ def tool_find_scip_symbol(symbol_name: str) -> Dict[str, Any]:
 def tool_get_cross_references(symbol_name: str) -> Dict[str, Any]:
     """获取符号的跨文件引用"""
     index = get_index()
-    if not hasattr(index, 'get_cross_references'):
+    if not hasattr(index, "get_cross_references"):
         return {"success": False, "error": "SCIP integration not available"}
-    
+
     cross_refs = index.get_cross_references(symbol_name)
-    
+
     # 转换为JSON友好格式
     references_by_file = {}
     total_references = 0
-    
+
     for file_path, occurrences in cross_refs.items():
         file_refs = []
         for occ in occurrences:
-            file_refs.append({
-                "symbol_id": occ.symbol_id,
-                "line": occ.line,
-                "column": occ.column,
-                "occurrence_type": occ.occurrence_type,
-                "context": occ.context
-            })
+            file_refs.append(
+                {
+                    "symbol_id": occ.symbol_id,
+                    "line": occ.line,
+                    "column": occ.column,
+                    "occurrence_type": occ.occurrence_type,
+                    "context": occ.context,
+                }
+            )
         references_by_file[file_path] = file_refs
         total_references += len(file_refs)
-    
+
     return {
         "success": True,
         "symbol_name": symbol_name,
         "references_by_file": references_by_file,
         "total_references": total_references,
-        "files_with_references": len(references_by_file)
+        "files_with_references": len(references_by_file),
     }
 
 
@@ -641,11 +672,11 @@ def tool_get_symbol_graph(symbol_id: str) -> Dict[str, Any]:
     index = get_index()
     if not index.scip_manager:
         return {"success": False, "error": "SCIP manager not initialized"}
-    
+
     graph = index.scip_manager.get_symbol_graph(symbol_id)
     if not graph:
         return {"success": False, "error": f"Symbol not found: {symbol_id}"}
-    
+
     # 转换为JSON友好格式
     result = {
         "success": True,
@@ -656,14 +687,14 @@ def tool_get_symbol_graph(symbol_id: str) -> Dict[str, Any]:
             "file_path": graph["symbol"].file_path,
             "line": graph["symbol"].line,
             "symbol_type": graph["symbol"].symbol_type,
-            "signature": graph["symbol"].signature
+            "signature": graph["symbol"].signature,
         },
         "definitions": [
             {
                 "file_path": def_occ.file_path,
                 "line": def_occ.line,
                 "column": def_occ.column,
-                "occurrence_type": def_occ.occurrence_type
+                "occurrence_type": def_occ.occurrence_type,
             }
             for def_occ in graph["definitions"]
         ],
@@ -673,15 +704,15 @@ def tool_get_symbol_graph(symbol_id: str) -> Dict[str, Any]:
                 "line": ref_occ.line,
                 "column": ref_occ.column,
                 "occurrence_type": ref_occ.occurrence_type,
-                "context": ref_occ.context
+                "context": ref_occ.context,
             }
             for ref_occ in graph["references"]
         ],
         "cross_file_usage": graph["cross_file_usage"],
         "definition_count": len(graph["definitions"]),
-        "reference_count": len(graph["references"])
+        "reference_count": len(graph["references"]),
     }
-    
+
     return result
 
 
@@ -689,17 +720,17 @@ def tool_get_symbol_graph(symbol_id: str) -> Dict[str, Any]:
 def tool_export_scip_index() -> Dict[str, Any]:
     """导出SCIP标准格式索引"""
     index = get_index()
-    if not hasattr(index, 'export_scip'):
+    if not hasattr(index, "export_scip"):
         return {"success": False, "error": "SCIP integration not available"}
-    
+
     scip_index = index.export_scip()
-    
+
     return {
         "success": True,
         "scip_index": scip_index,
         "metadata": scip_index.get("metadata", {}),
         "document_count": len(scip_index.get("documents", [])),
-        "external_symbols_count": len(scip_index.get("external_symbols", []))
+        "external_symbols_count": len(scip_index.get("external_symbols", [])),
     }
 
 
@@ -709,32 +740,37 @@ def tool_process_file_with_scip(file_path: str, language: str = None) -> Dict[st
     index = get_index()
     if not index.scip_manager:
         return {"success": False, "error": "SCIP manager not initialized"}
-    
+
     # 自动检测语言
     if not language:
         from .builder import detect_language
+
         language = detect_language(file_path)
-    
+
     # 从现有索引获取符号信息
     file_info = index.get_file(file_path)
     if not file_info:
         return {"success": False, "error": f"File not indexed: {file_path}"}
-    
+
     # 转换为SCIP格式
     symbols_data = []
     for symbol_name, symbol_info in index.symbols.items():
         if symbol_info.file == file_path:
-            symbols_data.append({
-                "name": symbol_name,
-                "type": symbol_info.type,
-                "line": symbol_info.line,
-                "column": 0,  # 默认列
-                "signature": symbol_info.signature
-            })
-    
+            symbols_data.append(
+                {
+                    "name": symbol_name,
+                    "type": symbol_info.type,
+                    "line": symbol_info.line,
+                    "column": 0,  # 默认列
+                    "signature": symbol_info.signature,
+                }
+            )
+
     # 使用SCIP管理器处理
-    document = index.scip_manager.process_file_symbols(file_path, language, symbols_data)
-    
+    document = index.scip_manager.process_file_symbols(
+        file_path, language, symbols_data
+    )
+
     return {
         "success": True,
         "file_path": file_path,
@@ -751,11 +787,11 @@ def tool_process_file_with_scip(file_path: str, language: str = None) -> Dict[st
                     "name": sym.name,
                     "symbol_type": sym.symbol_type,
                     "line": sym.line,
-                    "signature": sym.signature
+                    "signature": sym.signature,
                 }
                 for sym in document.symbols
-            ]
-        }
+            ],
+        },
     }
 
 

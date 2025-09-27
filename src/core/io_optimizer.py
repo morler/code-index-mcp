@@ -8,9 +8,10 @@ Linus风格I/O优化 - 消除阻塞，直接数据操作
 import asyncio
 import mmap
 import os
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+
 import aiofiles
 
 
@@ -21,8 +22,9 @@ class AsyncFileReader:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self._memory_mapped_files: Dict[str, mmap.mmap] = {}
 
-    async def read_file_async(self, file_path: Union[str, Path],
-                            encoding: str = 'utf-8') -> str:
+    async def read_file_async(
+        self, file_path: Union[str, Path], encoding: str = "utf-8"
+    ) -> str:
         """异步读取文件内容 - 非阻塞操作"""
         file_path = Path(file_path)
 
@@ -33,49 +35,50 @@ class AsyncFileReader:
         # 小文件使用aiofiles
         return await self._read_small_file_async(file_path, encoding)
 
-    async def _read_small_file_async(self, file_path: Path,
-                                   encoding: str) -> str:
+    async def _read_small_file_async(self, file_path: Path, encoding: str) -> str:
         """小文件异步读取 - aiofiles优化"""
         try:
-            async with aiofiles.open(file_path, 'r', encoding=encoding,
-                                   errors='ignore') as f:
+            async with aiofiles.open(
+                file_path, "r", encoding=encoding, errors="ignore"
+            ) as f:
                 return await f.read()
         except Exception:
             return ""
 
-    async def _read_large_file_mmap(self, file_path: Path,
-                                  encoding: str) -> str:
+    async def _read_large_file_mmap(self, file_path: Path, encoding: str) -> str:
         """大文件内存映射读取 - 零拷贝优化"""
-        file_key = str(file_path)
 
         def _mmap_read():
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                        return mm.read().decode(encoding, errors='ignore')
+                        return mm.read().decode(encoding, errors="ignore")
             except Exception:
                 return ""
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, _mmap_read)
 
-    async def read_file_lines_async(self, file_path: Union[str, Path],
-                                  encoding: str = 'utf-8') -> List[str]:
+    async def read_file_lines_async(
+        self, file_path: Union[str, Path], encoding: str = "utf-8"
+    ) -> List[str]:
         """异步按行读取文件 - 流式处理"""
         file_path = Path(file_path)
 
         try:
             lines = []
-            async with aiofiles.open(file_path, 'r', encoding=encoding,
-                                   errors='ignore') as f:
+            async with aiofiles.open(
+                file_path, "r", encoding=encoding, errors="ignore"
+            ) as f:
                 async for line in f:
-                    lines.append(line.rstrip('\n\r'))
+                    lines.append(line.rstrip("\n\r"))
             return lines
         except Exception:
             return []
 
-    async def batch_read_files(self, file_paths: List[Union[str, Path]],
-                             encoding: str = 'utf-8') -> Dict[str, str]:
+    async def batch_read_files(
+        self, file_paths: List[Union[str, Path]], encoding: str = "utf-8"
+    ) -> Dict[str, str]:
         """批量异步读取文件 - 并发优化"""
         tasks = []
         for file_path in file_paths:
@@ -108,9 +111,9 @@ class OptimizedDirectoryScanner:
         self.max_workers = max_workers
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
-    async def scan_directory_async(self, base_path: Path,
-                                 supported_extensions: set,
-                                 skip_dirs: set) -> List[str]:
+    async def scan_directory_async(
+        self, base_path: Path, supported_extensions: set, skip_dirs: set
+    ) -> List[str]:
         """异步并行目录扫描 - 消除I/O等待"""
 
         def _scan_single_dir(dir_path: str) -> List[str]:
@@ -121,8 +124,8 @@ class OptimizedDirectoryScanner:
                     for entry in entries:
                         if entry.is_file(follow_symlinks=False):
                             name = entry.name
-                            if '.' in name:
-                                ext = '.' + name.split('.')[-1].lower()
+                            if "." in name:
+                                ext = "." + name.split(".")[-1].lower()
                                 if ext in supported_extensions:
                                     local_files.append(entry.path)
                         elif entry.is_dir(follow_symlinks=False):
@@ -145,8 +148,8 @@ class OptimizedDirectoryScanner:
                             root_dirs.append(entry.path)
                     elif entry.is_file(follow_symlinks=False):
                         name = entry.name
-                        if '.' in name:
-                            ext = '.' + name.split('.')[-1].lower()
+                        if "." in name:
+                            ext = "." + name.split(".")[-1].lower()
                             if ext in supported_extensions:
                                 root_files.append(entry.path)
         except (OSError, PermissionError):
@@ -210,9 +213,9 @@ def cleanup_io_resources():
 
 
 # 同步兼容性包装器 - 保持向后兼容
-def read_file_optimized(file_path: Union[str, Path],
-                       encoding: str = 'utf-8') -> str:
+def read_file_optimized(file_path: Union[str, Path], encoding: str = "utf-8") -> str:
     """优化的同步文件读取 - 保持兼容性"""
+
     async def _read():
         reader = get_async_file_reader()
         return await reader.read_file_async(file_path, encoding)
@@ -222,6 +225,7 @@ def read_file_optimized(file_path: Union[str, Path],
         if loop.is_running():
             # 如果在异步上下文中，创建新的事件循环
             import threading
+
             result = [None]
             exception = [None]
 
@@ -249,9 +253,11 @@ def read_file_optimized(file_path: Union[str, Path],
         return asyncio.run(_read())
 
 
-def read_file_lines_optimized(file_path: Union[str, Path],
-                            encoding: str = 'utf-8') -> List[str]:
+def read_file_lines_optimized(
+    file_path: Union[str, Path], encoding: str = "utf-8"
+) -> List[str]:
     """优化的同步按行读取 - 保持兼容性"""
+
     async def _read():
         reader = get_async_file_reader()
         return await reader.read_file_lines_async(file_path, encoding)
@@ -260,6 +266,7 @@ def read_file_lines_optimized(file_path: Union[str, Path],
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import threading
+
             result = [None]
             exception = [None]
 
