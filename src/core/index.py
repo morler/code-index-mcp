@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Any, TYPE_CHECKING, Tuple
 import time
 import threading
 import shutil
+import subprocess
 import re
 from pathlib import Path
 
@@ -207,8 +208,8 @@ class CodeIndex:
 
             old_content = full_path.read_text(encoding='utf-8')
 
-            # 检查是否已存在
-            if import_statement in old_content:
+            # 检查是否已存在 - 使用ripgrep进行精确检测
+            if self._check_import_exists_with_ripgrep(str(full_path), import_statement):
                 return True, None  # 已存在，无需操作
 
             # 智能插入位置
@@ -375,6 +376,56 @@ class CodeIndex:
     def _validate_symbol_name(self, name: str) -> bool:
         """验证符号名 - 简单正则"""
         return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name.strip())) if name else False
+
+    def _run_ripgrep_command(self, cmd: List[str], timeout: int = 10) -> Optional[str]:
+        """公共的ripgrep命令执行方法 - 统一错误处理和超时"""
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='ignore',
+                timeout=timeout
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+            return None
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+            return None
+
+    def _check_import_exists_with_ripgrep(self, file_path: str, import_statement: str) -> bool:
+        """使用ripgrep检查导入是否已存在 - 更精确的检测"""
+        # 检查ripgrep可用性，fallback到简单检测
+        if not shutil.which("rg"):
+            # Fallback到原始方法
+            try:
+                content = Path(file_path).read_text(encoding='utf-8')
+                return import_statement in content
+            except:
+                return False
+
+        # 使用ripgrep进行精确的导入检测
+        # 排除注释行的策略：先找到所有匹配，再过滤掉注释行
+        escaped_statement = re.escape(import_statement.strip())
+        pattern = f"^\\s*{escaped_statement}\\s*$"
+
+        cmd = ["rg", "--line-regexp", "--regexp", pattern, file_path]
+
+        output = self._run_ripgrep_command(cmd)
+        if output:
+            # 检查找到的行是否是注释行
+            for line in output.strip().split('\n'):
+                if line and not line.strip().startswith('#'):
+                    return True  # 找到非注释行的导入
+            return False  # 所有匹配都在注释行中
+        else:
+            # Fallback到原始方法
+            try:
+                content = Path(file_path).read_text(encoding='utf-8')
+                return import_statement in content
+            except:
+                return False
 
     # SCIP协议方法 - 由integrate_with_code_index添加
     # find_scip_symbol, get_cross_references, export_scip
