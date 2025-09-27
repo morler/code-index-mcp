@@ -178,23 +178,12 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
                     f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}",
                 )
 
-        # 4. 创建备份
+                # 4. 创建备份 - 使用统一的全局备份逻辑
         if operation.backup_path is None:
-            backup_dir = file_path.parent / ".edit_backup"
-            backup_dir.mkdir(exist_ok=True)
-            timestamp = int(time.time())
-            backup_name = f"{file_path.name}.{timestamp}.bak"
-            operation.backup_path = str(backup_dir / backup_name)
-
-        try:
-            shutil.copy2(operation.file_path, operation.backup_path)
-        except PermissionError:
-            return (
-                False,
-                f"Cannot create backup: permission denied for {operation.backup_path}",
-            )
-        except OSError as e:
-            return False, f"Backup creation failed: {e}"
+            index = get_index()
+            operation.backup_path = index._create_backup(file_path)
+            if not operation.backup_path:
+                return False, "Failed to create backup file"
 
         # 5. 写入新内容
         try:

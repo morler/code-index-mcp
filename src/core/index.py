@@ -366,31 +366,74 @@ class CodeIndex:
                         shutil.copy2(snapshot_path, edit.file_path)
                     except Exception:
                         pass
-        self._cleanup_temp_snapshot(batch_edit.temp_dir)
+                self._cleanup_temp_snapshot(batch_edit.temp_dir)
 
     def _cleanup_temp_snapshot(self, temp_dir: Optional[str]) -> None:
         """清理临时快照"""
         if temp_dir and Path(temp_dir).exists():
             try:
-                shutil.rmtree(temp_dir)
+                                shutil.rmtree(temp_dir)
             except Exception:
                 pass
 
     def _create_backup(self, file_path: Path) -> Optional[str]:
-        """创建备份文件 - 避免冲突"""
+        """创建备份文件 - Linus-style简单直接"""
         try:
-            backup_dir = file_path.parent / ".edit_backup"
-            backup_dir.mkdir(exist_ok=True)
-
-            timestamp = int(time.time() * 1000000)  # 微秒级时间戳避免冲突
-            backup_name = f"{file_path.name}.{timestamp}.bak"
-            backup_path = backup_dir / backup_name
-
+            if not file_path.exists():
+                return None
+                
+            # 全局备份目录 - 简单直接
+            backup_root = Path.home() / ".code_index_backup"
+            
+            # 项目名称 - 优先git仓库，回退到工作目录
+            project_root = self._find_project_root(file_path)
+            project_name = project_root.name if project_root else Path.cwd().name
+            
+            # 安全的相对路径计算
+            if project_root and self._is_path_under(file_path, project_root):
+                relative_path = file_path.relative_to(project_root)
+            else:
+                # 使用文件名作为安全回退
+                relative_path = Path(file_path.name)
+            
+            # 备份路径构建
+            backup_dir = backup_root / project_name / relative_path.parent
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 唯一文件名
+            timestamp = int(time.time() * 1000000)
+            backup_path = backup_dir / f"{file_path.stem}.{timestamp}.bak"
+            
+            # 原子性文件复制
             shutil.copy2(file_path, backup_path)
             return str(backup_path)
-
-        except Exception:
+            
+        except (OSError, PermissionError):
+            # 具体错误类型，不静默失败
             return None
+    
+    def _is_path_under(self, path: Path, parent: Path) -> bool:
+        """安全检查路径是否在父目录下"""
+        try:
+            path.resolve().relative_to(parent.resolve())
+            return True
+        except ValueError:
+            return False
+    
+                
+    def _find_project_root(self, file_path: Path) -> Optional[Path]:
+        """查找项目根目录 - Linus-style简单检测"""
+        current = file_path if file_path.is_dir() else file_path.parent
+        
+        # 常见项目标记 - 数据驱动，无特殊情况
+        project_markers = {".git", "pyproject.toml", "package.json", "go.mod"}
+        
+        while current != current.parent:
+            if any((current / marker).exists() for marker in project_markers):
+                return current
+            current = current.parent
+        
+        return None
 
     def _update_file_in_index(self, file_path: str) -> None:
         """更新文件索引 - 保持数据一致性"""
