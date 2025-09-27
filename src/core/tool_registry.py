@@ -39,6 +39,8 @@ def _import_tools():
         tool_search_code,
         tool_semantic_search,
         tool_set_project_path,
+        tool_start_auto_indexing,
+        tool_get_watcher_status,
         tool_update_incrementally,
     )
 
@@ -62,6 +64,9 @@ def _import_tools():
         "rename_symbol": tool_rename_symbol,
         "add_import": tool_add_import,
         "apply_edit": tool_apply_edit,
+        # 文件监控工具
+        "start_auto_indexing": tool_start_auto_indexing,
+        "get_watcher_status": tool_get_watcher_status,
         # 增量索引工具
         "update_incrementally": tool_update_incrementally,
         "force_update_file": tool_force_update_file,

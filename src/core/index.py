@@ -465,6 +465,28 @@ class CodeIndex:
             except Exception:
                 return False
 
+    # ===== 文件监控接口 - Linus风格统一入口 =====
+
+    def start_auto_indexing(self, enable: bool = True) -> bool:
+        """启动/停止自动文件监控索引 - 统一开关"""
+        if enable:
+            from .watcher import start_auto_indexing
+            return start_auto_indexing(self)
+        else:
+            from .watcher import stop_auto_indexing
+            stop_auto_indexing()
+            return True
+
+    def is_auto_indexing_active(self) -> bool:
+        """检查自动索引是否活跃"""
+        from .watcher import is_auto_indexing_active
+        return is_auto_indexing_active()
+
+    def get_watcher_stats(self) -> dict:
+        """获取文件监控统计信息"""
+        from .watcher import get_watcher_stats
+        return get_watcher_stats()
+
     # SCIP协议方法 - 由integrate_with_code_index添加
     # find_scip_symbol, get_cross_references, export_scip
 

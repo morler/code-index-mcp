@@ -795,4 +795,33 @@ def tool_process_file_with_scip(file_path: str, language: str = None) -> Dict[st
     }
 
 
+@handle_mcp_errors
+def tool_start_auto_indexing(enable: bool = True) -> Dict[str, Any]:
+    """启动/停止自动文件监控索引 - 统一控制接口"""
+    index = get_index()
+
+    success = index.start_auto_indexing(enable)
+
+    return {
+        "success": success,
+        "auto_indexing_active": index.is_auto_indexing_active(),
+        "watcher_stats": index.get_watcher_stats(),
+        "message": "Auto indexing started" if enable and success else
+                   "Auto indexing stopped" if not enable else "Failed to start auto indexing"
+    }
+
+
+@handle_mcp_errors
+def tool_get_watcher_status() -> Dict[str, Any]:
+    """获取文件监控状态信息 - 诊断工具"""
+    index = get_index()
+
+    return {
+        "success": True,
+        "auto_indexing_active": index.is_auto_indexing_active(),
+        "watcher_stats": index.get_watcher_stats(),
+        "index_stats": index.get_stats()
+    }
+
+
 # 工具注册表已移至tool_registry.py以保持文件<200行原则
