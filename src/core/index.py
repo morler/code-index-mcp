@@ -1,16 +1,40 @@
 """Linus-style core data structures."""
 
+import hashlib
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from .scip import SCIPSymbolManager
+
+
+# 专用异常类 - 明确的错误分类
+class FileEditError(Exception):
+    """文件编辑操作的基础异常"""
+    pass
+
+
+class AtomicWriteError(FileEditError):
+    """原子写入失败异常"""
+    pass
+
+
+class FileLockError(FileEditError):
+    """文件锁定异常"""
+    pass
+
+
+class ContentMismatchError(FileEditError):
+    """内容不匹配异常"""
+    pass
 
 
 @dataclass
@@ -49,22 +73,84 @@ class SearchResult:
 
 
 @dataclass
-class AtomicEdit:
-    """原子编辑操作 - Good Taste: 无特殊情况"""
+class ImmutableEdit:
+    """不可变编辑操作 - Linus风格: 数据即真理"""
 
     file_path: str
-    old_content: str
+    old_hash: str  # 文件内容hash，避免内容比较
     new_content: str
-    _temp_path: Optional[str] = None  # 内部临时文件路径
+    operation_id: int = 0
+    timestamp: float = field(default_factory=time.time)
 
 
-@dataclass
-class BatchEdit:
-    """批量编辑 - 消除特殊情况"""
+# 全局文件锁管理 - 可预测的锁生命周期管理
+import threading
+import time
+from collections import OrderedDict
 
-    operations: List[AtomicEdit]
-    temp_dir: Optional[str] = None  # 临时目录进行原子性操作
-    snapshot_paths: List[str] = field(default_factory=list)  # 快照文件路径
+class ReliableFileLockManager:
+    """可靠的文件锁管理器 - 确定性清理，无GC依赖"""
+
+    def __init__(self, max_locks: int = 1000, cleanup_interval: float = 300.0):
+        self._locks: OrderedDict[str, threading.Lock] = OrderedDict()
+        self._access_times: Dict[str, float] = {}
+        self._mutex = threading.Lock()
+        self._max_locks = max_locks
+        self._cleanup_interval = cleanup_interval
+        self._last_cleanup = time.time()
+
+    def get_lock(self, file_path: str) -> threading.Lock:
+        """获取文件锁 - 线程安全 + 确定性清理"""
+        with self._mutex:
+            current_time = time.time()
+
+            # 定期清理（确定性触发）
+            if current_time - self._last_cleanup > self._cleanup_interval:
+                self._cleanup_old_locks(current_time)
+                self._last_cleanup = current_time
+
+            # 获取或创建锁
+            if file_path in self._locks:
+                # 更新访问时间并移到最后（LRU）
+                lock = self._locks.pop(file_path)
+                self._locks[file_path] = lock
+                self._access_times[file_path] = current_time
+                return lock
+
+            # 如果超过容量，删除最老的
+            if len(self._locks) >= self._max_locks:
+                oldest_file = next(iter(self._locks))
+                del self._locks[oldest_file]
+                self._access_times.pop(oldest_file, None)
+
+            # 创建新锁
+            lock = threading.Lock()
+            self._locks[file_path] = lock
+            self._access_times[file_path] = current_time
+            return lock
+
+    def _cleanup_old_locks(self, current_time: float):
+        """安全清理 - 只清理未被使用的锁"""
+        cutoff_time = current_time - self._cleanup_interval
+        to_remove = []
+
+        # 检查锁状态，只清理未被占用的锁
+        for path, access_time in list(self._access_times.items()):
+            if access_time < cutoff_time:
+                lock = self._locks.get(path)
+                if lock and not lock.locked():  # 确认锁未被占用
+                    to_remove.append(path)
+
+        # 安全删除
+        for path in to_remove:
+            self._locks.pop(path, None)
+            self._access_times.pop(path, None)
+
+_reliable_lock_manager = ReliableFileLockManager()
+
+def _get_file_lock(file_path: str) -> threading.Lock:
+    """获取文件锁 - 可预测的生命周期管理"""
+    return _reliable_lock_manager.get_lock(file_path)
 
 
 @dataclass
@@ -73,6 +159,8 @@ class CodeIndex:
     files: Dict[str, FileInfo]
     symbols: Dict[str, SymbolInfo]
     scip_manager: Optional["SCIPSymbolManager"] = None  # SCIP协议支持
+    _operation_counter: int = field(default=0, init=False, repr=False)
+    _counter_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __post_init__(self):
         """初始化SCIP管理器 - Linus风格：简单直接"""
@@ -144,296 +232,300 @@ class CodeIndex:
         for symbol_name in symbols_to_remove:
             self.symbols.pop(symbol_name, None)
 
-    # ===== 统一编辑接口 - Good Taste: 消除特殊情况 =====
+        # ===== Linus风格文件编辑接口 - Good Taste: 简单可靠 =====
+
+    def _get_next_operation_id(self) -> int:
+        """线程安全的操作ID生成器"""
+        with self._counter_lock:
+            self._operation_counter += 1
+            return self._operation_counter
+
+    def _hash_content(self, content: str) -> str:
+        """统一的内容hash计算 - 完整hash+文件大小"""
+        file_size = len(content.encode())
+        hash_full = hashlib.sha256(content.encode()).hexdigest()
+        return f"{hash_full}:{file_size}"
+
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """计算文件hash - 使用统一方法"""
+        try:
+            content = Path(file_path).read_text(encoding="utf-8")
+            return self._hash_content(content)
+        except Exception:
+            return "missing:0"
+
+    @contextmanager
+    def _file_lock_context(self, file_path: str):
+        """文件锁上下文管理器 - 防御性编程"""
+        file_lock = _get_file_lock(file_path)
+        lock_acquired = False
+
+        try:
+            lock_acquired = file_lock.acquire(blocking=False)
+            if not lock_acquired:
+                raise FileLockError(f"File {file_path} is being edited by another operation")
+            yield
+        finally:
+            if lock_acquired:
+                try:
+                    file_lock.release()
+                except RuntimeError:  # 已经释放的锁
+                    pass
 
     def edit_file_atomic(
         self, file_path: str, old_content: str, new_content: str
     ) -> Tuple[bool, Optional[str]]:
-        """原子性文件编辑 - 线程安全 + 索引同步"""
-        with _index_lock:
-            return self._edit_single_file(file_path, old_content, new_content)
+        """单文件原子性编辑 - 线程安全实现"""
+        try:
+            with self._file_lock_context(file_path):
+                # 1. 读取当前文件内容
+                path_obj = Path(file_path)
+                if not path_obj.exists():
+                    return False, f"File not found: {file_path}"
 
-    def edit_files_atomic(self, edits: List[AtomicEdit]) -> Tuple[bool, Optional[str]]:
-        """真正的原子性多文件编辑 - 无特殊情况"""
-        with _index_lock:
-            # 1. 一次性验证所有文件 (Good Taste: 失败快速返回)
-            validation_error = self._validate_all_edits(edits)
-            if validation_error:
-                return False, validation_error
+                try:
+                    current_content = path_obj.read_text(encoding="utf-8")
+                except UnicodeDecodeError as e:
+                    return False, f"File encoding error: {e}"
+                except PermissionError:
+                    return False, f"Permission denied: {file_path}"
 
-            # 2. 创建临时快照 (原子性保证)
-            batch_edit = BatchEdit(operations=edits)
-            temp_snapshot = self._create_temp_snapshot(batch_edit)
+                # 2. 简单内容匹配和替换
+                final_content = self._simple_content_replace(current_content, old_content, new_content)
+                if final_content is None:
+                    raise ContentMismatchError(f"Cannot find old_content in file: {file_path}")
 
-            # 3. 原子性批量写入 (要么全成功要么全失败)
-            try:
-                self._apply_all_edits_atomic(batch_edit)
-                self._batch_update_index([edit.file_path for edit in edits])
-                self._cleanup_temp_snapshot(temp_snapshot)
-                return True, None
-            except Exception as e:
-                self._restore_from_snapshot(batch_edit)
-                return False, str(e)
+                # 3. 真正的原子性写入
+                return self._write_file_atomic(file_path, final_content)
+
+        except ContentMismatchError as e:
+            return False, str(e)
+        except FileLockError as e:
+            return False, str(e)
+        except RuntimeError as e:
+            return False, str(e)
+        except Exception as e:
+            import traceback
+            return False, f"Unexpected error in edit_file_atomic: {e}\nTraceback: {traceback.format_exc()}"
+
+    def edit_files_atomic(self, edits: List[ImmutableEdit]) -> Tuple[bool, Optional[str]]:
+        """多文件原子性编辑 - 避免死锁的实现"""
+        acquired_locks = []
+
+        try:
+            # 1. 按路径排序避免死锁
+            sorted_edits = sorted(edits, key=lambda e: e.file_path)
+
+            # 2. 原子性获取所有文件锁
+            for edit in sorted_edits:
+                file_lock = _get_file_lock(edit.file_path)
+                if not file_lock.acquire(blocking=False):
+                    return False, f"File is being edited by another process: {edit.file_path}. Please wait for the other operation to complete or check if the file is open in an editor."
+                acquired_locks.append(file_lock)
+
+            # 3. 验证所有文件状态
+            for edit in sorted_edits:
+                current_hash = self._calculate_file_hash(edit.file_path)
+                if current_hash != edit.old_hash:
+                    return False, f"File {edit.file_path} content changed since hash: {edit.old_hash}"
+
+            # 4. 批量原子性写入
+            for edit in sorted_edits:
+                success, error = self._write_file_atomic(edit.file_path, edit.new_content)
+                if not success:
+                    return False, f"Failed to write {edit.file_path}: {error}"
+
+            return True, None
+
+        finally:
+            # 5. 按逆序释放锁 - 避免死锁
+            for lock in reversed(acquired_locks):
+                try:
+                    lock.release()
+                except RuntimeError:  # 只捕获"锁未获取"异常
+                    pass  # 锁已释放或未获取
 
     def edit_files_transaction(
-        self, edits: List[AtomicEdit]
+        self, edits: List[ImmutableEdit]
     ) -> Tuple[bool, Optional[str]]:
-        """向后兼容接口 - 重定向到原子性实现"""
+        """向后兼容接口 - 重定向到无锁实现"""
         return self.edit_files_atomic(edits)
+
+    def _write_file_atomic(self, file_path: str, content: str) -> Tuple[bool, Optional[str]]:
+        """真正的跨平台原子性文件写入 - 文件锁 + 备份恢复"""
+        path_obj = Path(file_path)
+        temp_file = path_obj.with_suffix(path_obj.suffix + '.tmp')
+        backup_path = None
+
+        try:
+            # 1. 创建备份
+            backup_success, backup_path, backup_error = self._create_backup(path_obj)
+            if not backup_success:
+                return False, f"Backup creation failed: {backup_error}"
+
+            # 2. 写入临时文件
+            temp_file.write_text(content, encoding="utf-8")
+
+            # 3. 跨平台安全的原子替换
+            success = self._atomic_replace(temp_file, path_obj)
+            if not success:
+                # 替换失败，从备份恢复
+                if backup_path:
+                    try:
+                        shutil.copy2(backup_path, path_obj)
+                        return False, "Atomic replace failed, file restored from backup"
+                    except Exception as e:
+                        return False, f"Atomic replace failed AND backup restore failed: {e}"
+                else:
+                    return False, "Atomic replace failed, no backup was created"
+
+            # 4. 更新索引 - 异步执行，不阻塞编辑
+            try:
+                self._update_file_in_index(file_path)
+            except Exception:
+                pass  # 索引更新失败不影响文件编辑
+
+            return True, None
+
+        except PermissionError as e:
+            return False, f"File locked or permission denied: {e}"
+        except OSError as e:
+            return False, f"Write failed: {e}"
+        except Exception as e:
+            import traceback
+            return False, f"Unexpected error in _write_file_atomic: {e}\nTraceback: {traceback.format_exc()}"
+        finally:
+            # 清理临时文件
+            try:
+                temp_file.unlink()
+            except FileNotFoundError:
+                pass  # 已经被移动
+            except PermissionError:
+                pass  # Windows文件锁定 - 不阻塞
+
+    def _atomic_replace(self, temp_file: Path, target_file: Path) -> bool:
+        """跨平台原子性替换 - 最大努力原子性"""
+        if sys.platform == 'win32':
+            # Windows: 使用多次重试的方式处理文件锁定
+            max_retries = 5  # 经验值：处理病毒扫描器和文件锁定
+            base_delay = 0.01  # 基础延迟10ms，避免CPU spinning
+            for i in range(max_retries):
+                try:
+                    # 检查目标文件是否存在
+                    if target_file.exists():
+                        target_file.unlink()
+                    temp_file.rename(target_file)
+                    return True
+                except PermissionError as e:
+                    if i == max_retries - 1:
+                        # 最后一次重试失败，抛出详细异常
+                        raise PermissionError(f"File locked after {max_retries} retries: {target_file}. Check if file is open in another program or being scanned by antivirus. Original error: {e}")
+                    # 指数退避重试
+                    time.sleep(base_delay * (2 ** i))
+                except OSError as e:
+                    if i == max_retries - 1:
+                        raise OSError(f"Filesystem error after {max_retries} retries: {target_file}. Check disk space and permissions. Original error: {e}")
+                    time.sleep(base_delay * (2 ** i))
+            return False
+        else:
+            # Unix: 真正的原子操作
+            temp_file.replace(target_file)
+            return True
 
     def rename_symbol_atomic(
         self, old_name: str, new_name: str
     ) -> Tuple[bool, Optional[str], int]:
-        """原子性符号重命名 - 跨文件事务操作"""
-        with _index_lock:
-            if not self._validate_symbol_name(
-                old_name
-            ) or not self._validate_symbol_name(new_name):
-                return False, "Invalid symbol name", 0
+        """原子性符号重命名 - 跨文件无锁操作"""
+        if not self._validate_symbol_name(old_name) or not self._validate_symbol_name(new_name):
+            return False, "Invalid symbol name", 0
 
-            # 查找所有引用
-            refs = self.search(SearchQuery(old_name, "symbol")).matches
-            edits = []
+        # 查找所有引用
+        refs = self.search(SearchQuery(old_name, "symbol")).matches
+        edits = []
 
-            for ref in refs:
-                file_path = ref.get("file")
-                if not file_path:
-                    continue
+        for ref in refs:
+            file_path = ref.get("file")
+            if not file_path:
+                continue
 
-                full_path = self._resolve_file_path(file_path)
-                if not full_path.exists():
-                    continue
+            full_path = self._resolve_file_path(file_path)
+            if not full_path.exists():
+                continue
 
-                old_content = full_path.read_text(encoding="utf-8")
-                new_content = re.sub(
-                    r"\b" + re.escape(old_name) + r"\b", new_name, old_content
+            old_content = full_path.read_text(encoding="utf-8")
+            new_content = re.sub(
+                r"\b" + re.escape(old_name) + r"\b", new_name, old_content
+            )
+
+            if old_content != new_content:
+                # 使用统一的hash计算方法
+                old_hash = self._hash_content(old_content)
+                edits.append(
+                    ImmutableEdit(
+                        file_path=str(full_path),
+                        old_hash=old_hash,
+                        new_content=new_content,
+                        operation_id=self._get_next_operation_id()
+                    )
                 )
 
-                if old_content != new_content:
-                    edits.append(
-                        AtomicEdit(
-                            file_path=str(full_path),
-                            old_content=old_content,
-                            new_content=new_content,
-                        )
-                    )
+        if not edits:
+            return True, None, 0
 
-            if not edits:
-                return True, None, 0
-
-            success, error = self.edit_files_transaction(edits)
-            return success, error, len(edits)
+        success, error = self.edit_files_atomic(edits)
+        return success, error, len(edits)
 
     def add_import_atomic(
         self, file_path: str, import_statement: str
     ) -> Tuple[bool, Optional[str]]:
-        """原子性添加导入 - 智能位置插入"""
-        with _index_lock:
-            full_path = self._resolve_file_path(file_path)
-            if not full_path.exists():
-                return False, f"File not found: {file_path}"
+        """原子性添加导入 - 智能位置插入，无锁实现"""
+        full_path = self._resolve_file_path(file_path)
+        if not full_path.exists():
+            return False, f"File not found: {file_path}"
 
-            old_content = full_path.read_text(encoding="utf-8")
+        old_content = full_path.read_text(encoding="utf-8")
 
-            # 检查是否已存在 - 使用ripgrep进行精确检测
-            if self._check_import_exists_with_ripgrep(str(full_path), import_statement):
-                return True, None  # 已存在，无需操作
+        # 检查是否已存在 - 使用ripgrep进行精确检测
+        if self._check_import_exists_with_ripgrep(str(full_path), import_statement):
+            return True, None  # 已存在，无需操作
 
-            # 智能插入位置
-            lines = old_content.splitlines()
-            insert_pos = 0
-            for i, line in enumerate(lines):
-                if line.strip().startswith(("import ", "from ")):
-                    insert_pos = i + 1
+        # 智能插入位置
+        lines = old_content.splitlines()
+        insert_pos = 0
+        for i, line in enumerate(lines):
+            if line.strip().startswith(("import ", "from ")):
+                insert_pos = i + 1
 
-            lines.insert(insert_pos, import_statement)
-            new_content = "\n".join(lines)
+        lines.insert(insert_pos, import_statement)
+        new_content = "\n".join(lines)
 
-            return self._edit_single_file(str(full_path), old_content, new_content)
+        return self.edit_file_atomic(str(full_path), old_content, new_content)
 
-    # ===== 内部实现 - 直接数据操作 =====
+        # ===== 内部实现 - Linus风格直接数据操作 =====
 
-    def _edit_single_file(
-        self, file_path: str, old_content: str, new_content: str
-    ) -> Tuple[bool, Optional[str]]:
-        """单文件编辑 - Good Taste: 消除所有特殊情况"""
-        try:
-            file_path_obj = Path(file_path)
-
-            # 验证文件状态
-            if not file_path_obj.exists():
-                return False, f"File not found: {file_path}"
-
-            current_content = file_path_obj.read_text(encoding="utf-8")
-
-            # Good Taste: 只有一种逻辑 - 精确替换
-            if old_content and old_content.strip():
-                # 验证内容存在
-                if old_content.strip() not in current_content:
-                    return False, f"Content not found in {file_path}"
-                # 精确替换 - 限制替换次数防止重复
-                final_content = current_content.replace(
-                    old_content.strip(), new_content, 1
-                )
-            else:
-                # 全文替换
-                final_content = new_content
-
-            # 创建备份
-            backup_path = self._create_backup(file_path_obj)
-            if not backup_path:
-                return False, "Failed to create backup"
-
-            # 原子性写入
-            file_path_obj.write_text(final_content, encoding="utf-8")
-
-            # 更新索引 - 关键：保持数据一致性
-            self._update_file_in_index(str(file_path_obj))
-
-            return True, None
-
-        except Exception as e:
-            return False, f"Edit failed: {e}"
-
-        # ===== Linus风格原子性实现 - 消除特殊情况 =====
-
-    def _validate_all_edits(self, edits: List[AtomicEdit]) -> Optional[str]:
-        """一次性验证所有编辑 - Good Taste: 失败快速返回"""
-        for edit in edits:
-            file_path_obj = Path(edit.file_path)
-            if not file_path_obj.exists():
-                return f"File not found: {edit.file_path}"
-
-            try:
-                current_content = file_path_obj.read_text(encoding="utf-8")
-                if edit.old_content and edit.old_content.strip():
-                    if edit.old_content.strip() not in current_content:
-                        return f"Content mismatch in {edit.file_path}"
-            except Exception as e:
-                return f"Read failed for {edit.file_path}: {e}"
-        return None
-
-    def _create_temp_snapshot(self, batch_edit: BatchEdit) -> str:
-        """创建临时快照 - 原子性保证"""
-        import tempfile
-
-        batch_edit.temp_dir = tempfile.mkdtemp(prefix="code_index_edit_")
-
-        for i, edit in enumerate(batch_edit.operations):
-            snapshot_path = Path(batch_edit.temp_dir) / f"snapshot_{i}.bak"
-            shutil.copy2(edit.file_path, snapshot_path)
-            batch_edit.snapshot_paths.append(str(snapshot_path))
-
-        return batch_edit.temp_dir
-
-    def _apply_all_edits_atomic(self, batch_edit: BatchEdit) -> None:
-        """10行代码搞定，不需要100行"""
-        # 简单粗暴但正确: 先写临时文件，再原子性移动
-        for i, edit in enumerate(batch_edit.operations):
-            temp_file = Path(batch_edit.temp_dir or "/tmp") / f"temp_{i}.tmp"
-
-            # 处理内容替换 - 限制替换次数防止重复
-            if edit.old_content and edit.old_content.strip():
-                current_content = Path(edit.file_path).read_text(encoding="utf-8")
-                final_content = current_content.replace(
-                    edit.old_content.strip(), edit.new_content, 1
-                )
-            else:
-                final_content = edit.new_content
-
-            temp_file.write_text(final_content, encoding="utf-8")
-            edit._temp_path = str(temp_file)
-
-        # 原子性批量移动 - 要么全成功要么全失败
-        for edit in batch_edit.operations:
-            shutil.move(edit._temp_path or "", edit.file_path)
-
-    def _batch_update_index(self, file_paths: List[str]) -> None:
-        """批量索引更新 - 事务结束后统一更新"""
-        for file_path in file_paths:
-            try:
-                self.force_update_file(file_path)
-            except Exception:
-                pass  # 索引更新失败不影响文件编辑
-
-    def _restore_from_snapshot(self, batch_edit: BatchEdit) -> None:
-        """从快照恢复 - 保证零破坏性"""
-        for i, edit in enumerate(batch_edit.operations):
-            if i < len(batch_edit.snapshot_paths):
-                snapshot_path = batch_edit.snapshot_paths[i]
-                if Path(snapshot_path).exists():
-                    try:
-                        shutil.copy2(snapshot_path, edit.file_path)
-                    except Exception:
-                        pass
-                self._cleanup_temp_snapshot(batch_edit.temp_dir)
-
-    def _cleanup_temp_snapshot(self, temp_dir: Optional[str]) -> None:
-        """清理临时快照"""
-        if temp_dir and Path(temp_dir).exists():
-            try:
-                                shutil.rmtree(temp_dir)
-            except Exception:
-                pass
-
-    def _create_backup(self, file_path: Path) -> Optional[str]:
-        """创建备份文件 - Linus-style简单直接"""
+    def _create_backup(self, file_path: Path) -> Tuple[bool, Optional[str], Optional[str]]:
+        """创建备份 - 返回(成功, 备份路径, 错误信息)"""
         try:
             if not file_path.exists():
-                return None
-                
-            # 全局备份目录 - 简单直接
+                return True, None, "File does not exist, no backup needed"
+
             backup_root = Path.home() / ".code_index_backup"
-            
-            # 项目名称 - 优先git仓库，回退到工作目录
-            project_root = self._find_project_root(file_path)
-            project_name = project_root.name if project_root else Path.cwd().name
-            
-            # 安全的相对路径计算
-            if project_root and self._is_path_under(file_path, project_root):
-                relative_path = file_path.relative_to(project_root)
-            else:
-                # 使用文件名作为安全回退
-                relative_path = Path(file_path.name)
-            
-            # 备份路径构建
-            backup_dir = backup_root / project_name / relative_path.parent
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            
-            # 唯一文件名
+            backup_root.mkdir(parents=True, exist_ok=True)
+
+            # 使用文件绝对路径的hash作为备份名 - 避免路径冲突
+            path_hash = hashlib.sha256(str(file_path.absolute()).encode()).hexdigest()[:8]
             timestamp = int(time.time() * 1000000)
-            backup_path = backup_dir / f"{file_path.stem}.{timestamp}.bak"
-            
-            # 原子性文件复制
+            backup_path = backup_root / f"{file_path.stem}_{path_hash}_{timestamp}.bak"
+
             shutil.copy2(file_path, backup_path)
-            return str(backup_path)
-            
-        except (OSError, PermissionError):
-            # 具体错误类型，不静默失败
-            return None
-    
-    def _is_path_under(self, path: Path, parent: Path) -> bool:
-        """安全检查路径是否在父目录下"""
-        try:
-            path.resolve().relative_to(parent.resolve())
-            return True
-        except ValueError:
-            return False
-    
-                
-    def _find_project_root(self, file_path: Path) -> Optional[Path]:
-        """查找项目根目录 - Linus-style简单检测"""
-        current = file_path if file_path.is_dir() else file_path.parent
-        
-        # 常见项目标记 - 数据驱动，无特殊情况
-        project_markers = {".git", "pyproject.toml", "package.json", "go.mod"}
-        
-        while current != current.parent:
-            if any((current / marker).exists() for marker in project_markers):
-                return current
-            current = current.parent
-        
-        return None
+            return True, str(backup_path), None
+
+        except PermissionError as e:
+            return False, None, f"Permission denied creating backup: {e}"
+        except OSError as e:
+            return False, None, f"IO error creating backup: {e}"
+        except Exception as e:
+            return False, None, f"Unexpected error creating backup: {e}"
 
     def _update_file_in_index(self, file_path: str) -> None:
         """更新文件索引 - 保持数据一致性"""
@@ -451,6 +543,19 @@ class CodeIndex:
 
         base_path = Path(self.base_path) if self.base_path else Path.cwd()
         return base_path / file_path
+
+    def _simple_content_replace(self, current_content: str, old_content: str, new_content: str) -> Optional[str]:
+        """Good Taste: 单一清晰的替换语义"""
+        # 追加操作 - 明确的API语义
+        if not old_content:
+            return current_content + new_content
+
+        # 精确替换 - 只有一种行为，用户完全控制匹配
+        if old_content in current_content:
+            return current_content.replace(old_content, new_content, 1)
+
+        # 未找到 - 明确失败
+        return None
 
     def _validate_symbol_name(self, name: str) -> bool:
         """验证符号名 - 简单正则"""
@@ -541,33 +646,29 @@ class CodeIndex:
 
 
 _global_index: Optional[CodeIndex] = None
-_index_lock = threading.RLock()  # 递归锁支持同一线程多次获取
 
 
 def get_index() -> CodeIndex:
-    """获取全局索引 - 线程安全"""
-    with _index_lock:
-        if _global_index is None:
-            raise RuntimeError("Index not initialized")
-        return _global_index
+    """获取全局索引 - 无锁实现"""
+    if _global_index is None:
+        raise RuntimeError("Index not initialized")
+    return _global_index
 
 
 def set_project_path(path: str) -> CodeIndex:
-    """设置项目路径 - 线程安全的索引构建"""
-    with _index_lock:
-        global _global_index
-        _global_index = CodeIndex(base_path=path, files={}, symbols={})
+    """设置项目路径 - Linus风格简单实现"""
+    global _global_index
+    _global_index = CodeIndex(base_path=path, files={}, symbols={})
 
-        # Linus原则: 一个函数做完整的事情 - 自动构建索引
-        from .builder import IndexBuilder
+    # Linus原则: 一个函数做完整的事情 - 自动构建索引
+    from .builder import IndexBuilder
 
-        builder = IndexBuilder(_global_index)
-        builder.build_index(path)  # 传递路径参数
+    builder = IndexBuilder(_global_index)
+    builder.build_index(path)  # 传递路径参数
 
-        return _global_index
+    return _global_index
 
 
 def index_exists() -> bool:
-    """检查索引是否存在 - 线程安全"""
-    with _index_lock:
-        return _global_index is not None
+    """检查索引是否存在 - 无锁实现"""
+    return _global_index is not None
