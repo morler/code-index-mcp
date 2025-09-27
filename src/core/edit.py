@@ -1,8 +1,19 @@
 """
-Linus-style semantic editing - 直接数据操作
+DEPRECATED: 此文件已弃用
 
-替代600+行复杂服务，30行解决问题
-无包装器，无抽象层，纯数据结构
+所有编辑功能已迁移到src/core/index.py的CodeIndex类中：
+- edit_file_atomic() - 原子性文件编辑
+- edit_files_transaction() - 事务性多文件编辑
+- rename_symbol_atomic() - 原子性符号重命名
+- add_import_atomic() - 原子性导入添加
+
+新实现具有以下优势：
+1. 线程安全 - 统一锁机制
+2. 事务保证 - 全部成功或全部失败
+3. 索引同步 - 编辑后自动更新索引
+4. 无竞争条件 - 所有操作通过单一入口
+
+请使用: index.edit_file_atomic() 等新方法
 """
 
 from dataclasses import dataclass

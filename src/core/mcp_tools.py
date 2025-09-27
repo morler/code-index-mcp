@@ -426,29 +426,34 @@ def tool_get_symbol_body(symbol_name: str, file_path: str = None, language: str 
 
 @handle_mcp_errors
 def tool_rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
-    """符号重命名 - 直接编辑操作"""
-    from .edit import rename_symbol
-    result = rename_symbol(old_name, new_name)
+    """符号重命名 - 原子性事务操作"""
+    try:
+        index = get_index()
+        success, error, files_changed = index.rename_symbol_atomic(old_name, new_name)
 
-    return {
-        "success": result.success,
-        "files_changed": result.files_changed,
-        "operations": len(result.operations),
-        "error": result.error
-    }
+        return {
+            "success": success,
+            "files_changed": files_changed,
+            "error": error
+        }
+    except Exception as e:
+        return _create_error_response(e, "Symbol rename failed")
 
 
 @handle_mcp_errors
 def tool_add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
-    """添加导入 - 直接文件操作"""
-    from .edit import add_import
-    result = add_import(file_path, import_statement)
+    """添加导入 - 原子性操作"""
+    try:
+        index = get_index()
+        success, error = index.add_import_atomic(file_path, import_statement)
 
-    return {
-        "success": result.success,
-        "files_changed": result.files_changed,
-        "error": result.error
-    }
+        return {
+            "success": success,
+            "files_changed": 1 if success and error is None else 0,
+            "error": error
+        }
+    except Exception as e:
+        return _create_error_response(e, "Add import failed")
 
 
 
@@ -528,30 +533,18 @@ def tool_full_rebuild_index() -> Dict[str, Any]:
 
 @handle_mcp_errors
 def tool_apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
-    """应用编辑 - 原子操作，使用路径解析"""
-    from .edit import EditOperation, apply_edit
-
-    # 获取索引以确定项目路径
+    """应用编辑 - 原子性操作"""
     try:
         index = get_index()
-        resolved_path = _resolve_file_path(index.base_path, file_path)
-    except RuntimeError:
-        # 索引未初始化，使用相对路径
-        resolved_path = Path(file_path)
+        success, error = index.edit_file_atomic(file_path, old_content, new_content)
 
-    operation = EditOperation(
-        file_path=str(resolved_path),
-        old_content=old_content,
-        new_content=new_content
-    )
-
-    success, error_msg = apply_edit(operation)
-    return {
-        "success": success,
-        "backup_path": operation.backup_path,
-        "error": error_msg,
-        "resolved_path": str(resolved_path)  # 调试信息
-    }
+        return {
+            "success": success,
+            "error": error,
+            "files_changed": 1 if success else 0
+        }
+    except Exception as e:
+        return _create_error_response(e, "Apply edit failed")
 
 # ----- SCIP协议工具 - Linus风格统一接口 -----
 
