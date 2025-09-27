@@ -1,243 +1,104 @@
-# Code Index MCP Performance Optimization Plan
+# Code Index MCP - Ripgrep Integration Plan
 
-## 🎯 Project Goal
-Implement Linus-style performance optimizations to achieve 2-3x overall performance improvement while reducing memory usage by 50% for large projects (1000+ files).
+## 项目背景
 
-## 📋 Development Phases
+基于对当前自研搜索引擎的性能分析和ripgrep技术研究，制定集成ripgrep的详细实施计划。
 
-### Phase 1: Memory Management Optimization ⭐⭐⭐
-**Priority**: Critical
-**Estimated Time**: 2-3 days
-**Target**: Reduce memory usage by 50%
+## 性能收益分析
 
-#### Tasks:
-1. **Smart Cache Sizing**
-   - Modify `src/core/cache.py:235` to implement dynamic cache sizing
-   - Add system memory detection using `psutil`
-   - Set intelligent defaults: 400 files per GB of system RAM
-   - Maximum cache memory: 20% of total system memory
+### 当前性能基准（自研搜索引擎）
+- **文本搜索**：0.0500-0.1500秒（中等项目）
+- **正则搜索**：0.0800-0.2000秒
+- **并行优化**：仅在文件数>500时启用
+- **内存使用**：需完整加载文件内容到Python字符串
 
-2. **Cache Eviction Improvements**
-   - Implement smarter LRU eviction based on file access patterns
-   - Add cache statistics monitoring
-   - Implement cache warming for frequently accessed files
+### Ripgrep核心技术优势
+1. **Rust零成本抽象** + **SIMD优化**
+2. **Boyer-Moore字符串算法** + **literal optimizations**
+3. **原生并行搜索** - 无GIL限制
+4. **内存映射文件访问** - 避免完整文件读取
+5. **线性时间保证** - 有限自动机正则引擎
 
-3. **Memory Usage Monitoring**
-   - Add memory usage tracking to cache statistics
-   - Implement memory pressure detection
-   - Add emergency cache clearing when memory is low
+### 预期性能提升
 
-#### Success Criteria:
-- Memory usage under 100MB for projects with 1000+ files
-- Cache hit rate > 70%
-- No memory leaks in long-running sessions
+#### 小型项目（<1000文件）
+- **文本搜索**：3-5x速度提升（0.050s → 0.010-0.015s）
+- **正则搜索**：5-8x速度提升（0.080s → 0.010-0.015s）
+- **内存使用**：-60%（避免Python字符串拷贝）
 
-### Phase 2: Ultra-Fast File Change Detection ⭐⭐⭐
-**Priority**: Critical
-**Estimated Time**: 1-2 days
-**Target**: 3-5x faster change detection
+#### 中型项目（1000-10000文件）
+- **文本搜索**：8-15x速度提升（0.150s → 0.010-0.020s）
+- **正则搜索**：10-20x速度提升（0.200s → 0.010-0.020s）
+- **并行效率**：真正的并行vs Python的伪并行
 
-#### Tasks:
-1. **Metadata-Only Hashing**
-   - Replace full content hashing with metadata for files > 10KB
-   - Use `mtime:size:inode` for large files
-   - Keep content hashing only for small files (< 10KB)
+#### 大型项目（>10000文件）
+- **文本搜索**：15-30x速度提升
+- **正则搜索**：20-40x速度提升
+- **内存映射**：无文件大小限制
 
-2. **Smart Hash Strategy**
-   ```python
-   def _calculate_file_hash_ultra_fast(self, file_path: str) -> str:
-       stat = Path(file_path).stat()
-       if stat.st_size < 10240:
-           # Small files: content hash
-           return xxhash.xxh3_64(content).hexdigest()
-       else:
-           # Large files: metadata only
-           return f"{stat.st_mtime}:{stat.st_size}:{stat.st_ino}"
-   ```
+## 实现方案 - Linus风格
 
-3. **Batch Change Detection**
-   - Process multiple files in parallel
-   - Use `os.scandir()` for faster directory traversal
-   - Implement early exit for unchanged directories
+### 核心原则：直接、简单、有效
 
-#### Success Criteria:
-- File change detection < 1ms per file on average
-- 90%+ accuracy in change detection
-- No false negatives for actual file changes
+#### 1. 一次性实现 - 无阶段划分
+```python
+# 在 src/core/search.py 直接添加：
+def _search_text(self, query: SearchQuery) -> List[Dict[str, Any]]:
+    # 检查ripgrep可用性
+    if shutil.which("rg"):
+        return self._search_with_ripgrep(query)
+    else:
+        return self._search_text_single(query)
 
-### Phase 3: Parallel Search Engine ⭐⭐
-**Priority**: High
-**Estimated Time**: 2-3 days
-**Target**: 2-4x faster search on large projects
+def _search_with_ripgrep(self, query: SearchQuery) -> List[Dict[str, Any]]:
+    cmd = ["rg", "--json", "--line-number"]
+    if not query.case_sensitive:
+        cmd.append("--ignore-case")
+    cmd.extend([query.pattern, self.index.project_path])
 
-#### Tasks:
-1. **Multi-threaded Search**
-   - Implement `ThreadPoolExecutor` for file searching
-   - Optimal worker count: `min(4, file_count//10)`
-   - Graceful fallback to single-threaded for small projects
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return self._parse_rg_output(result.stdout)
 
-2. **Search Result Caching**
-   ```python
-   @lru_cache(maxsize=100)
-   def _search_cached(self, query_hash: str, file_signatures: tuple):
-       # Cache search results when file signatures unchanged
-   ```
+def _parse_rg_output(self, output: str) -> List[Dict[str, Any]]:
+    matches = []
+    for line in output.strip().split('\n'):
+        if line:
+            data = json.loads(line)
+            if data.get('type') == 'match':
+                matches.append({
+                    "file": data['data']['path']['text'],
+                    "line": data['data']['line_number'],
+                    "content": data['data']['lines']['text'].strip(),
+                    "language": self._detect_language(data['data']['path']['text'])
+                })
+    return matches
+```
 
-3. **Early Exit Optimization**
-   - Add result limit parameter to search queries
-   - Default maximum: 1000 results
-   - Stop searching when limit reached
+### 工作量
+- **总计：30-50行代码**
+- **开发时间：2-4小时**
+- **测试时间：1小时**
 
-#### Success Criteria:
-- Search time < 10ms for typical queries
-- Linear scaling with CPU cores (up to 4 cores)
-- No race conditions or thread safety issues
+## 开发任务
 
-### Phase 4: Advanced Caching Layer ⭐⭐
-**Priority**: Medium
-**Estimated Time**: 2-3 days
-**Target**: 10x+ faster repeated operations
+### 唯一任务：集成ripgrep
+1. 修改`src/core/search.py`中的`_search_text`和`_search_regex`方法
+2. 添加ripgrep检测和JSON解析
+3. 运行现有测试确保兼容性
+4. **完成**
 
-#### Tasks:
-1. **Query Result Caching**
-   - Cache search results with file signature dependencies
-   - Intelligent cache invalidation on file changes
-   - Separate caches for different query types
+### 不做的事情
+- ❌ 不创建新的类或模块
+- ❌ 不添加配置系统
+- ❌ 不添加复杂的错误处理
+- ❌ 不进行阶段性开发
 
-2. **Tree-sitter Parse Caching**
-   ```python
-   class TreeSitterCache:
-       def __init__(self):
-           self._tree_cache = {}  # content_hash -> parsed_tree
+## 结论
 
-       def get_tree(self, file_path: str, content_hash: str):
-           # Return cached parse tree or create new one
-   ```
+**"这不是解决不存在问题的过度工程，而是解决真实性能瓶颈的务实方案。"**
 
-3. **Symbol Index Caching**
-   - Cache extracted symbols with file hash dependencies
-   - Incremental symbol updates
-   - Cross-file symbol reference caching
-
-#### Success Criteria:
-- Repeated searches < 1ms response time
-- Parse tree reuse rate > 80%
-- Symbol extraction cache hit rate > 90%
-
-### Phase 5: I/O Optimization ⭐
-**Priority**: Low
-**Estimated Time**: 1-2 days
-**Target**: Reduce I/O bottlenecks
-
-#### Tasks:
-1. **Async File Operations**
-   - Use `aiofiles` for non-blocking file reads
-   - Batch file operations where possible
-   - Implement read-ahead for predictable access patterns
-
-2. **Optimized File Reading**
-   - Use memory-mapped files for large files
-   - Implement streaming readers for huge files
-   - Buffer size optimization based on file type
-
-3. **Directory Traversal Optimization**
-   - Use `os.scandir()` instead of `os.listdir()`
-   - Implement parallel directory scanning
-   - Smart filtering during traversal
-
-#### Success Criteria:
-- File read operations < 0.1ms for cached files
-- Directory scanning 2x faster than current
-- No I/O blocking during indexing
-
-## 🔧 Implementation Strategy
-
-### Development Approach:
-1. **Measure First**: Run current benchmarks to establish baseline
-2. **Incremental Changes**: Implement one optimization at a time
-3. **Continuous Testing**: Run performance tests after each change
-4. **Rollback Ready**: Keep backup implementations for critical paths
-
-### Testing Strategy:
-1. **Performance Regression Tests**
-   ```bash
-   # Run before and after each phase
-   python phase4_benchmark.py
-   python tests/test_hash_performance.py
-   python tests/test_cache_performance.py
-   ```
-
-2. **Memory Profiling**
-   ```python
-   # Add memory tracking to all major operations
-   import psutil
-   process = psutil.Process()
-   memory_before = process.memory_info().rss
-   # ... operation ...
-   memory_after = process.memory_info().rss
-   ```
-
-3. **Load Testing**
-   - Test with projects of varying sizes (10, 100, 1000, 10000 files)
-   - Test with different file types and sizes
-   - Test concurrent access patterns
-
-### Quality Gates:
-- **Phase 1**: Memory usage < 100MB for 1000 files
-- **Phase 2**: Change detection < 1ms per file
-- **Phase 3**: Search time < 10ms for typical queries
-- **Phase 4**: Repeated operations < 1ms
-- **Phase 5**: File operations < 0.1ms for cached files
-
-## 📊 Success Metrics
-
-### Performance Targets:
-| Metric | Current | Target | Improvement |
-|--------|---------|--------|-------------|
-| Memory Usage (1000 files) | ~200MB | <100MB | 50% reduction |
-| File Change Detection | ~2ms | <1ms | 2x faster |
-| Search Time (typical) | ~25ms | <10ms | 2.5x faster |
-| Repeated Search | ~25ms | <1ms | 25x faster |
-| Index Initialization | ~100ms | <50ms | 2x faster |
-
-### Code Quality Targets:
-- Maintain current test coverage (>90%)
-- Keep functions under 30 lines (Linus principle)
-- No new complexity beyond 2 indentation levels
-- All optimizations must be backwards compatible
-
-## 🛡️ Risk Mitigation
-
-### Technical Risks:
-1. **Memory Leaks**: Implement comprehensive memory monitoring
-2. **Thread Safety**: Use proven concurrent patterns only
-3. **Cache Invalidation**: Conservative invalidation strategies
-4. **Platform Compatibility**: Test on Windows/Linux/macOS
-
-### Rollback Strategy:
-- Keep original implementations as fallback options
-- Feature flags for new optimizations
-- Gradual rollout with monitoring
-
-## 📅 Timeline
-
-**Week 1**: Phase 1 (Memory Management)
-**Week 2**: Phase 2 (Fast Change Detection)
-**Week 3**: Phase 3 (Parallel Search)
-**Week 4**: Phase 4 (Advanced Caching)
-**Week 5**: Phase 5 (I/O Optimization) + Integration Testing
-
-**Total Estimated Time**: 5 weeks
-
-## 🎉 Expected Outcomes
-
-After completing all phases:
-- **2-3x overall performance improvement** on large projects
-- **50% memory usage reduction**
-- **Sub-second response times** for all operations
-- **Scalable architecture** ready for projects with 10,000+ files
-- **Maintained code simplicity** following Linus principles
-
----
-
-*"Premature optimization is the root of all evil, but when you do optimize, do it right."* - Following Linus Torvalds' approach: measure, optimize the bottlenecks, keep it simple.
+这是一个完美符合"好品味"原则的技术决策：
+- ✅ **简单的实现**
+- ✅ **巨大的收益**
+- ✅ **零破坏性**
+- ✅ **务实的解决方案**

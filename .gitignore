@@ -65,3 +65,4 @@ RELEASE_NOTE.txt
 
 .llm-context/
 .kiro/
+.dmux/
