@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 # 添加项目根目录到Python路径
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent  # 上一级目录
 sys.path.insert(0, str(project_root / "src"))
 
 def test_core_imports():
@@ -142,7 +142,7 @@ def test_path_handling():
         # 测试不同类型的路径
         test_cases = [
             ("relative/path.py", None, "relative/path.py"),
-            ("C:\absolute\path.py", None, "C:/absolute/path.py"),
+                    (r"C:\absolute\path.py", None, "C:/absolute/path.py"),
             ("relative.py", "/base/path", "/base/path/relative.py"),
         ]
         

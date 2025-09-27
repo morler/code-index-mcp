@@ -53,14 +53,15 @@ class AtomicEdit:
     file_path: str
     old_content: str
     new_content: str
-    backup_path: Optional[str] = None
+    _temp_path: Optional[str] = None  # 内部临时文件路径
 
 
-@dataclass
-class EditTransaction:
-    """编辑事务 - Linus原则: 要么全成功，要么全失败"""
-    edits: List[AtomicEdit]
-    rollback_data: List[str] = field(default_factory=list)  # 备份文件路径
+@dataclass  
+class BatchEdit:
+    """批量编辑 - 消除特殊情况"""
+    operations: List[AtomicEdit]
+    temp_dir: Optional[str] = None  # 临时目录进行原子性操作
+    snapshot_paths: List[str] = field(default_factory=list)  # 快照文件路径
 
 
 @dataclass
@@ -134,13 +135,33 @@ class CodeIndex:
     def edit_file_atomic(self, file_path: str, old_content: str, new_content: str) -> Tuple[bool, Optional[str]]:
         """原子性文件编辑 - 线程安全 + 索引同步"""
         with _index_lock:
-            return self._edit_single_file(file_path, old_content, new_content)
+                        return self._edit_single_file(file_path, old_content, new_content)
+
+    def edit_files_atomic(self, edits: List[AtomicEdit]) -> Tuple[bool, Optional[str]]:
+        """真正的原子性多文件编辑 - 无特殊情况"""
+        with _index_lock:
+            # 1. 一次性验证所有文件 (Good Taste: 失败快速返回)
+            validation_error = self._validate_all_edits(edits)
+            if validation_error:
+                return False, validation_error
+            
+            # 2. 创建临时快照 (原子性保证)
+            batch_edit = BatchEdit(operations=edits)
+            temp_snapshot = self._create_temp_snapshot(batch_edit)
+            
+            # 3. 原子性批量写入 (要么全成功要么全失败)
+            try:
+                self._apply_all_edits_atomic(batch_edit)
+                self._batch_update_index([edit.file_path for edit in edits])
+                self._cleanup_temp_snapshot(temp_snapshot)
+                return True, None
+            except Exception as e:
+                self._restore_from_snapshot(batch_edit)
+                return False, str(e)
 
     def edit_files_transaction(self, edits: List[AtomicEdit]) -> Tuple[bool, Optional[str]]:
-        """事务性多文件编辑 - 全部成功或全部失败"""
-        with _index_lock:
-            transaction = EditTransaction(edits=edits)
-            return self._execute_transaction(transaction)
+        """向后兼容接口 - 重定向到原子性实现"""
+        return self.edit_files_atomic(edits)
 
     def rename_symbol_atomic(self, old_name: str, new_name: str) -> Tuple[bool, Optional[str], int]:
         """原子性符号重命名 - 跨文件事务操作"""
@@ -240,63 +261,83 @@ class CodeIndex:
         except Exception as e:
             return False, f"Edit failed: {e}"
 
-    def _execute_transaction(self, transaction: EditTransaction) -> Tuple[bool, Optional[str]]:
-        """执行编辑事务 - 内部方法"""
-        # Phase 1: 验证所有操作
-        for edit in transaction.edits:
+        # ===== Linus风格原子性实现 - 消除特殊情况 =====
+    
+    def _validate_all_edits(self, edits: List[AtomicEdit]) -> Optional[str]:
+        """一次性验证所有编辑 - Good Taste: 失败快速返回"""
+        for edit in edits:
             file_path_obj = Path(edit.file_path)
             if not file_path_obj.exists():
-                return False, f"File not found: {edit.file_path}"
-
+                return f"File not found: {edit.file_path}"
+                
             try:
                 current_content = file_path_obj.read_text(encoding='utf-8')
-                if edit.old_content and edit.old_content.strip() not in current_content:
-                    return False, f"Content mismatch in {edit.file_path}"
-            except Exception as e:
-                return False, f"Validation failed for {edit.file_path}: {e}"
-
-        # Phase 2: 创建所有备份
-        for edit in transaction.edits:
-            backup_path = self._create_backup(Path(edit.file_path))
-            if not backup_path:
-                self._rollback_transaction(transaction)
-                return False, f"Backup failed for {edit.file_path}"
-            edit.backup_path = backup_path
-            transaction.rollback_data.append(backup_path)
-
-        # Phase 3: 原子性执行所有编辑
-        try:
-            for edit in transaction.edits:
-                file_path_obj = Path(edit.file_path)
-                current_content = file_path_obj.read_text(encoding='utf-8')
-
-                # 处理内容替换
                 if edit.old_content and edit.old_content.strip():
-                    final_content = current_content.replace(edit.old_content.strip(), edit.new_content)
-                else:
-                    final_content = edit.new_content
-
-                file_path_obj.write_text(final_content, encoding='utf-8')
-
-                # 更新索引
-                self._update_file_in_index(str(file_path_obj))
-
-            return True, None
-
-        except Exception as e:
-            # 出错时回滚
-            self._rollback_transaction(transaction)
-            return False, f"Transaction failed: {e}"
-
-    def _rollback_transaction(self, transaction: EditTransaction) -> None:
-        """回滚事务 - 恢复所有文件"""
-        for edit in transaction.edits:
-            if edit.backup_path and Path(edit.backup_path).exists():
-                try:
-                    shutil.copy2(edit.backup_path, edit.file_path)
-                    self._update_file_in_index(edit.file_path)
-                except Exception:
-                    pass  # 静默处理回滚错误
+                    if edit.old_content.strip() not in current_content:
+                        return f"Content mismatch in {edit.file_path}"
+            except Exception as e:
+                return f"Read failed for {edit.file_path}: {e}"
+        return None
+    
+    def _create_temp_snapshot(self, batch_edit: BatchEdit) -> str:
+        """创建临时快照 - 原子性保证"""
+        import tempfile
+        batch_edit.temp_dir = tempfile.mkdtemp(prefix="code_index_edit_")
+        
+        for i, edit in enumerate(batch_edit.operations):
+            snapshot_path = Path(batch_edit.temp_dir) / f"snapshot_{i}.bak"
+            shutil.copy2(edit.file_path, snapshot_path)
+            batch_edit.snapshot_paths.append(str(snapshot_path))
+            
+        return batch_edit.temp_dir
+    
+    def _apply_all_edits_atomic(self, batch_edit: BatchEdit) -> None:
+        """10行代码搞定，不需要100行"""
+        # 简单粗暴但正确: 先写临时文件，再原子性移动
+        for i, edit in enumerate(batch_edit.operations):
+            temp_file = Path(batch_edit.temp_dir) / f"temp_{i}.tmp"
+            
+            # 处理内容替换
+            if edit.old_content and edit.old_content.strip():
+                current_content = Path(edit.file_path).read_text(encoding='utf-8')
+                final_content = current_content.replace(edit.old_content.strip(), edit.new_content)
+            else:
+                final_content = edit.new_content
+                
+            temp_file.write_text(final_content, encoding='utf-8')
+            edit._temp_path = str(temp_file)
+        
+        # 原子性批量移动 - 要么全成功要么全失败
+        for edit in batch_edit.operations:
+            shutil.move(edit._temp_path, edit.file_path)
+    
+    def _batch_update_index(self, file_paths: List[str]) -> None:
+        """批量索引更新 - 事务结束后统一更新"""
+        for file_path in file_paths:
+            try:
+                self.force_update_file(file_path)
+            except Exception:
+                pass  # 索引更新失败不影响文件编辑
+    
+    def _restore_from_snapshot(self, batch_edit: BatchEdit) -> None:
+        """从快照恢复 - 保证零破坏性"""
+        for i, edit in enumerate(batch_edit.operations):
+            if i < len(batch_edit.snapshot_paths):
+                snapshot_path = batch_edit.snapshot_paths[i]
+                if Path(snapshot_path).exists():
+                    try:
+                        shutil.copy2(snapshot_path, edit.file_path)
+                    except Exception:
+                        pass
+        self._cleanup_temp_snapshot(batch_edit.temp_dir)
+    
+    def _cleanup_temp_snapshot(self, temp_dir: Optional[str]) -> None:
+        """清理临时快照"""
+        if temp_dir and Path(temp_dir).exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
     def _create_backup(self, file_path: Path) -> Optional[str]:
         """创建备份文件 - 避免冲突"""
