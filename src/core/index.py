@@ -256,7 +256,7 @@ class CodeIndex:
     def _edit_single_file(
         self, file_path: str, old_content: str, new_content: str
     ) -> Tuple[bool, Optional[str]]:
-        """单文件编辑 - 内部方法，假设已持有锁"""
+        """单文件编辑 - Good Taste: 消除所有特殊情况"""
         try:
             file_path_obj = Path(file_path)
 
@@ -266,16 +266,16 @@ class CodeIndex:
 
             current_content = file_path_obj.read_text(encoding="utf-8")
 
-            # 内容验证 - 支持部分匹配
+            # Good Taste: 只有一种逻辑 - 精确替换
             if old_content and old_content.strip():
+                # 验证内容存在
                 if old_content.strip() not in current_content:
-                    return False, f"Content mismatch in {file_path}"
-
-                # 如果是部分匹配，更新为完整替换
-                if old_content.strip() != current_content.strip():
-                    new_content = current_content.replace(
-                        old_content.strip(), new_content
-                    )
+                    return False, f"Content not found in {file_path}"
+                # 精确替换 - 限制替换次数防止重复
+                final_content = current_content.replace(old_content.strip(), new_content, 1)
+            else:
+                # 全文替换
+                final_content = new_content
 
             # 创建备份
             backup_path = self._create_backup(file_path_obj)
@@ -283,7 +283,7 @@ class CodeIndex:
                 return False, "Failed to create backup"
 
             # 原子性写入
-            file_path_obj.write_text(new_content, encoding="utf-8")
+            file_path_obj.write_text(final_content, encoding="utf-8")
 
             # 更新索引 - 关键：保持数据一致性
             self._update_file_in_index(str(file_path_obj))
@@ -330,11 +330,11 @@ class CodeIndex:
         for i, edit in enumerate(batch_edit.operations):
             temp_file = Path(batch_edit.temp_dir) / f"temp_{i}.tmp"
 
-            # 处理内容替换
+                        # 处理内容替换 - 限制替换次数防止重复
             if edit.old_content and edit.old_content.strip():
                 current_content = Path(edit.file_path).read_text(encoding="utf-8")
                 final_content = current_content.replace(
-                    edit.old_content.strip(), edit.new_content
+                    edit.old_content.strip(), edit.new_content, 1
                 )
             else:
                 final_content = edit.new_content
