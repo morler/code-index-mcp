@@ -23,6 +23,7 @@ dependencies = [
     "tree-sitter-rust>=0.20.0",
     "tree-sitter-c>=0.20.0",
     "tree-sitter-cpp>=0.20.0",
+    "tree-sitter-odin>=0.1.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
     "xxhash>=3.0.0",

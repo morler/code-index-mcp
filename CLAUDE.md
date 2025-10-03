@@ -319,4 +319,4 @@ uv run code-index-mcp
 ```
 
 - **Proactively use the CodeIndex tool for code analysis, search, read, edit and rewrite**
-- 项目使用uv虚拟环境运行
+- **项目使用uv虚拟环境运行**

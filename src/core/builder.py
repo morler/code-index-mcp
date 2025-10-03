@@ -155,6 +155,7 @@ LANGUAGE_MAP = {
     ".clj": "clojure",
     ".lisp": "lisp",
     ".scm": "scheme",
+    ".odin": "odin",
 }
 
 
@@ -184,6 +185,7 @@ def _get_tree_sitter_languages():
         ("rust", "tree_sitter_rust"),
         ("c", "tree_sitter_c"),
         ("cpp", "tree_sitter_cpp"),
+        ("odin", "tree_sitter_odin"),
     ]
 
     for lang_name, module_name in language_modules:
@@ -287,6 +289,7 @@ class IndexBuilder:
             ".hpp": self._process_tree_sitter,
             ".cc": self._process_tree_sitter,
             ".cxx": self._process_tree_sitter,
+            ".odin": self._process_tree_sitter,
         }
 
     # Linus原则: 统一AST操作架构 - 零特殊情况
@@ -824,6 +827,9 @@ class IndexBuilder:
             "class_definition": ("classes", self._extract_tree_sitter_name),
             "struct_declaration": ("structs", self._extract_tree_sitter_name),
             "struct_definition": ("structs", self._extract_tree_sitter_name),
+            # 枚举/联合定义 - 多语言通用
+            "enum_declaration": ("enums", self._extract_tree_sitter_name),
+            "union_declaration": ("unions", self._extract_tree_sitter_name),
             # 接口/特质定义
             "interface_declaration": ("interfaces", self._extract_tree_sitter_name),
             "interface_definition": ("interfaces", self._extract_tree_sitter_name),
@@ -883,6 +889,14 @@ class IndexBuilder:
             "zig": {
                 "function_declaration": ("functions", self._extract_tree_sitter_name),
                 "struct_declaration": ("structs", self._extract_tree_sitter_name),
+            },
+            "odin": {
+                # Odin特有节点 - procedure是Odin的函数声明关键字
+                "procedure_declaration": ("functions", self._extract_tree_sitter_name),
+                "bit_field_declaration": ("bit_fields", self._extract_tree_sitter_name),
+                "const_declaration": ("constants", self._extract_tree_sitter_name),
+                # 以下由common_operations处理：
+                # - struct_declaration, enum_declaration, union_declaration, import_declaration
             },
         }
 
