@@ -122,6 +122,7 @@ LANGUAGE_MAP = {
     ".go": "go",
     ".rs": "rust",
     ".zig": "zig",
+    ".odin": "odin",
     ".c": "c",
     ".h": "c",
     ".cpp": "cpp",
@@ -184,6 +185,7 @@ def _get_tree_sitter_languages():
         ("rust", "tree_sitter_rust"),
         ("c", "tree_sitter_c"),
         ("cpp", "tree_sitter_cpp"),
+        ("odin", "tree_sitter_odin"),
     ]
 
     for lang_name, module_name in language_modules:
@@ -281,6 +283,7 @@ class IndexBuilder:
             ".java": self._process_tree_sitter,
             ".go": self._process_tree_sitter,
             ".zig": self._process_tree_sitter,
+            ".odin": self._process_tree_sitter,
             ".c": self._process_tree_sitter,
             ".h": self._process_tree_sitter,
             ".cpp": self._process_tree_sitter,
@@ -883,6 +886,12 @@ class IndexBuilder:
             "zig": {
                 "function_declaration": ("functions", self._extract_tree_sitter_name),
                 "struct_declaration": ("structs", self._extract_tree_sitter_name),
+            },
+            "odin": {
+                "function_declaration": ("functions", self._extract_tree_sitter_name),
+                "struct_declaration": ("structs", self._extract_tree_sitter_name),
+                "enum_declaration": ("enums", self._extract_tree_sitter_name),
+                "import_declaration": ("imports", self._extract_tree_sitter_import),
             },
         }
 
