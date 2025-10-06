@@ -178,13 +178,35 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
                     f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}",
                 )
 
-        # 4. 创建备份
+        # 4. 创建备份 - 全局统一目录
         if operation.backup_path is None:
-            backup_dir = file_path.parent / ".edit_backup"
-            backup_dir.mkdir(exist_ok=True)
+            # 使用文件路径的根目录来找到项目根目录
+            # 向上查找项目根目录（有.py文件或其他项目标识）
+            current_path = file_path.parent
+            base_path = current_path
+
+            # 向上查找项目根目录（最多查找5层）
+            for _ in range(5):
+                if (base_path / "src").exists() or (base_path / "pyproject.toml").exists() or (base_path / "setup.py").exists() or list(base_path.glob("*.py")):
+                    break
+                parent = base_path.parent
+                if parent == base_path:  # 已经到达根目录
+                    break
+                base_path = parent
+
+            global_backup_dir = base_path / ".edit_backup"
+            global_backup_dir.mkdir(exist_ok=True)
+
+            # 使用相对路径作为备份文件名的一部分
+            try:
+                relative_path = file_path.relative_to(base_path)
+            except ValueError:
+                # 如果无法计算相对路径，使用文件名
+                relative_path = file_path.name
+
             timestamp = int(time.time())
-            backup_name = f"{file_path.name}.{timestamp}.bak"
-            operation.backup_path = str(backup_dir / backup_name)
+            backup_name = f"{str(relative_path).replace('/', '_')}.{timestamp}.bak"
+            operation.backup_path = str(global_backup_dir / backup_name)
 
         try:
             shutil.copy2(operation.file_path, operation.backup_path)

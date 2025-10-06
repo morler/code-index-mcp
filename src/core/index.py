@@ -375,14 +375,18 @@ class CodeIndex:
                 pass
 
     def _create_backup(self, file_path: Path) -> Optional[str]:
-        """创建备份文件 - 避免冲突"""
+        """创建备份文件 - 全局统一目录"""
         try:
-            backup_dir = file_path.parent / ".edit_backup"
-            backup_dir.mkdir(exist_ok=True)
+            # 使用项目根目录下的统一 .edit_backup 目录
+            base_path = Path(self.base_path) if self.base_path else Path.cwd()
+            global_backup_dir = base_path / ".edit_backup"
+            global_backup_dir.mkdir(exist_ok=True)
 
+            # 使用相对路径作为备份文件名的一部分，避免冲突
+            relative_path = file_path.relative_to(base_path)
             timestamp = int(time.time() * 1000000)  # 微秒级时间戳避免冲突
-            backup_name = f"{file_path.name}.{timestamp}.bak"
-            backup_path = backup_dir / backup_name
+            backup_name = f"{str(relative_path).replace('/', '_')}.{timestamp}.bak"
+            backup_path = global_backup_dir / backup_name
 
             shutil.copy2(file_path, backup_path)
             return str(backup_path)
