@@ -708,39 +708,7 @@ class IndexBuilder:
         except ImportError:
             pass
 
-        # 缓存未命中 - 执行完整符号提取
-        extraction_start = time.time()
-
-        # Phase 4: 缓存解析AST - 80%+复用率目标
-        tree = None
-        try:
-            from .tree_sitter_cache import get_cached_tree
-
-            tree = get_cached_tree(file_path, content, language, parser)
-        except ImportError:
-            pass
-        except Exception:
-            pass
-
-        # 缓存未命中时直接解析并缓存结果
-        if not tree:
-            tree = parser.parse(content)
-            # 立即缓存新解析的tree - 确保后续访问命中缓存
-            try:
-                from .tree_sitter_cache import get_tree_cache
-
-                cache = get_tree_cache()
-                cache._cache_parsed_tree(
-                    file_path,
-                    cache._calculate_content_hash(content),
-                    tree,
-                    language,
-                    0.0,
-                )
-            except Exception:
-                pass
-
-        # Linus原则: 语言特定的AST操作映射 - 零if/elif分支
+        # 语言特定的AST操作映射 - 零if/elif分支
         language_operations = self._get_language_operations(language)
 
         def process_node(node):
@@ -764,7 +732,7 @@ class IndexBuilder:
             for child in node.children:
                 walk_tree(child)
 
-        walk_tree(tree.root_node)
+        walk_tree(parser.parse(content).root_node)
 
         file_info = FileInfo(
             language=language,
@@ -889,7 +857,7 @@ class IndexBuilder:
                 "struct_declaration": ("structs", self._extract_tree_sitter_name),
             },
             "odin": {
-                "function_declaration": ("functions", self._extract_tree_sitter_name),
+                "procedure_declaration": ("functions", self._extract_tree_sitter_name),
                 "struct_declaration": ("structs", self._extract_tree_sitter_name),
                 "enum_declaration": ("enums", self._extract_tree_sitter_name),
                 "import_declaration": ("imports", self._extract_tree_sitter_import),
