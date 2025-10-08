@@ -10,7 +10,7 @@ import mmap
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 
 import aiofiles
 
@@ -226,8 +226,8 @@ def read_file_optimized(file_path: Union[str, Path], encoding: str = "utf-8") ->
             # 如果在异步上下文中，创建新的事件循环
             import threading
 
-            result = [None]
-            exception = [None]
+            result: List[Optional[str]] = [None]
+            exception: List[Optional[Exception]] = [None]
 
             def run_in_thread():
                 try:
@@ -245,12 +245,12 @@ def read_file_optimized(file_path: Union[str, Path], encoding: str = "utf-8") ->
 
             if exception[0]:
                 raise exception[0]
-            return result[0]
+            return cast(str, result[0])
         else:
-            return loop.run_until_complete(_read())
+            return cast(str, loop.run_until_complete(_read()))
     except RuntimeError:
         # 没有事件循环，创建新的
-        return asyncio.run(_read())
+        return cast(str, asyncio.run(_read()))
 
 
 def read_file_lines_optimized(
@@ -267,8 +267,8 @@ def read_file_lines_optimized(
         if loop.is_running():
             import threading
 
-            result = [None]
-            exception = [None]
+            result: List[Optional[List[str]]] = [None]
+            exception: List[Optional[Exception]] = [None]
 
             def run_in_thread():
                 try:
@@ -286,8 +286,8 @@ def read_file_lines_optimized(
 
             if exception[0]:
                 raise exception[0]
-            return result[0]
+            return cast(List[str], result[0])
         else:
-            return loop.run_until_complete(_read())
+            return cast(List[str], loop.run_until_complete(_read()))
     except RuntimeError:
-        return asyncio.run(_read())
+        return cast(List[str], asyncio.run(_read()))

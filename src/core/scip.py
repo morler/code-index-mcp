@@ -7,7 +7,7 @@ SCIP协议完整支持 - Linus风格直接数据操作
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, cast
 
 
 @dataclass
@@ -139,10 +139,14 @@ class SCIPSymbolManager:
 
         for document in self.documents.values():
             for occurrence in document.occurrences:
-                if occurrence.symbol_id == symbol_id and occurrence.occurrence_type in [
-                    "definition",
-                    "declaration",
-                ]:
+                if (
+                    occurrence.symbol_id == symbol_id
+                    and occurrence.occurrence_type
+                    in [
+                        "definition",
+                        "declaration",
+                    ]
+                ):
                     definitions.append(occurrence)
 
         return definitions
@@ -199,7 +203,7 @@ class SCIPSymbolManager:
 
         返回格式: {file_path: [occurrences]}
         """
-        cross_refs = {}
+        cross_refs: Dict[str, List[SCIPOccurrence]] = {}
 
         # 查找所有匹配名称的符号
         symbols = self.find_symbol_by_name(symbol_name)
@@ -408,7 +412,8 @@ class SCIPSymbolManager:
         return roles.get(occurrence_type, 4)  # 默认为引用
 
     def _create_scip_range(
-        self, line: int, column: int, end_line: int = None, end_column: int = None
+        self, line: int, column: int, end_line: Optional[int] = None,
+        end_column: Optional[int] = None
     ) -> List[int]:
         """创建SCIP范围格式 [start_line, start_col, end_line, end_col]"""
         if end_line is None:
@@ -446,13 +451,16 @@ def integrate_with_code_index(code_index, scip_manager: SCIPSymbolManager) -> No
 
     # 添加SCIP查询方法
     def find_scip_symbol(self, name: str) -> List[SCIPSymbol]:
-        return self.scip_manager.find_symbol_by_name(name)
+        result = self.scip_manager.find_symbol_by_name(name)
+        return cast(List[SCIPSymbol], result)
 
     def get_cross_references(self, symbol_name: str) -> Dict[str, List[SCIPOccurrence]]:
-        return self.scip_manager.find_cross_references(symbol_name)
+        result = self.scip_manager.find_cross_references(symbol_name)
+        return cast(Dict[str, List[SCIPOccurrence]], result)
 
     def export_scip(self) -> Dict[str, Any]:
-        return self.scip_manager.export_scip_index()
+        result = self.scip_manager.export_scip_index()
+        return cast(Dict[str, Any], result)
 
     # 绑定方法到CodeIndex实例
     code_index.find_scip_symbol = find_scip_symbol.__get__(code_index)

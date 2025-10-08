@@ -118,7 +118,7 @@ class CodeIndex:
         """增量更新索引 - Linus原则: 只处理变更文件"""
         from .incremental import get_incremental_indexer
 
-        return get_incremental_indexer().update_index(root_path)
+        return get_incremental_indexer().update_index(root_path or "")
 
     def force_update_file(self, file_path: str) -> bool:
         """强制更新指定文件 - 忽略变更检测"""
@@ -328,7 +328,7 @@ class CodeIndex:
         """10行代码搞定，不需要100行"""
         # 简单粗暴但正确: 先写临时文件，再原子性移动
         for i, edit in enumerate(batch_edit.operations):
-            temp_file = Path(batch_edit.temp_dir) / f"temp_{i}.tmp"
+            temp_file = Path(batch_edit.temp_dir or "") / f"temp_{i}.tmp"
 
             # 处理内容替换
             if edit.old_content and edit.old_content.strip():
@@ -344,7 +344,7 @@ class CodeIndex:
 
         # 原子性批量移动 - 要么全成功要么全失败
         for edit in batch_edit.operations:
-            shutil.move(edit._temp_path, edit.file_path)
+            shutil.move(edit._temp_path or "", edit.file_path)
 
     def _batch_update_index(self, file_paths: List[str]) -> None:
         """批量索引更新 - 事务结束后统一更新"""

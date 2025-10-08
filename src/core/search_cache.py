@@ -8,7 +8,7 @@ import hashlib
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from .index import CodeIndex, SearchQuery, SearchResult
 
@@ -197,7 +197,7 @@ class AdvancedQueryCache:
         for file_path in orphaned_files:
             self._file_signatures.pop(file_path, None)
 
-    def get_cache_stats(self) -> Dict[str, any]:
+    def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
         total_requests = self._cache_hits + self._cache_misses
         hit_ratio = self._cache_hits / max(total_requests, 1)
@@ -278,7 +278,7 @@ class SearchCacheMixin:
         """文件变更时失效相关缓存"""
         self._advanced_cache.invalidate_file_changes(changed_files, self.index)
 
-    def get_cache_stats(self) -> Dict[str, any]:
+    def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
         return self._advanced_cache.get_cache_stats()
 

@@ -86,7 +86,7 @@ class OptimizedFileCache:
         # 内存压力检测
         self._memory_warnings = 0
         self._emergency_cleanups = 0
-        self._last_memory_check = 0
+        self._last_memory_check: float = 0.0
         self._memory_check_interval = 30  # 30秒检查一次系统内存
 
         # 智能缓存大小 - 自动系统检测
@@ -551,11 +551,11 @@ class OptimizedFileCache:
         return {
             "recent_accesses_last_hour": recent_accesses,
             "active_files_last_hour": active_files,
-            "cache_efficiency": "HIGH"
-            if self._calculate_hit_ratio() > 0.8
-            else "MEDIUM"
-            if self._calculate_hit_ratio() > 0.6
-            else "LOW",
+            "cache_efficiency": (
+                "HIGH"
+                if self._calculate_hit_ratio() > 0.8
+                else "MEDIUM" if self._calculate_hit_ratio() > 0.6 else "LOW"
+            ),
         }
 
     def clear_cache(self) -> None:
@@ -606,6 +606,7 @@ def clear_global_cache() -> None:
     global _global_file_cache
     if _global_file_cache:
         _global_file_cache.clear_cache()
+        _global_file_cache = None
 
 
 # 便利函数 - 直接使用接口

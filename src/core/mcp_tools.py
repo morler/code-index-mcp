@@ -8,12 +8,11 @@ MCP Tools - Linus式统一工具实现
 import errno
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from .builder import handle_mcp_errors
 from .index import SearchQuery, get_index
 from .index import set_project_path as core_set_project_path
-
 # 向后兼容 - 导出execute_tool
 from .tool_registry import execute_tool
 
@@ -36,7 +35,7 @@ def _create_error_response(error: Exception, context: str = "") -> Dict[str, Any
     elif isinstance(error, UnicodeDecodeError):
         return {
             "success": False,
-            "error": f"File encoding error: cannot decode {error.object}",
+            "error": f"File encoding error: cannot decode {error.object!r}",
         }
     elif isinstance(error, ValueError):
         return {"success": False, "error": f"Invalid value: {str(error)}"}
@@ -137,7 +136,7 @@ def tool_get_index_stats() -> Dict[str, Any]:
 
 def tool_semantic_search(query: str, search_type: str) -> Dict[str, Any]:
     """统一语义搜索 - 替代所有专门函数"""
-    return tool_search_code(query, search_type)
+    return cast(Dict[str, Any], tool_search_code(query, search_type))
 
 
 def tool_find_references(symbol_name: str) -> Dict[str, Any]:
@@ -228,8 +227,8 @@ def tool_check_file_exists(file_path: str) -> Dict[str, Any]:
 @handle_mcp_errors
 def tool_get_file_content(
     file_path: str,
-    start_line: int = None,
-    end_line: int = None,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
     show_line_numbers: bool = False,
 ) -> Dict[str, Any]:
     """获取文件内容 - 直接操作，零抽象，支持全文件和片段"""
@@ -385,7 +384,7 @@ def _detect_indent_body_end(lines: List[str], start_idx: int) -> int:
 @handle_mcp_errors
 def tool_get_symbol_body(
     symbol_name: str,
-    file_path: str = None,
+    file_path: Optional[str] = None,
     language: str = "auto",
     show_line_numbers: bool = False,
 ) -> Dict[str, Any]:
@@ -735,7 +734,9 @@ def tool_export_scip_index() -> Dict[str, Any]:
 
 
 @handle_mcp_errors
-def tool_process_file_with_scip(file_path: str, language: str = None) -> Dict[str, Any]:
+def tool_process_file_with_scip(
+    file_path: str, language: Optional[str] = None
+) -> Dict[str, Any]:
     """使用SCIP处理单个文件的符号"""
     index = get_index()
     if not index.scip_manager:

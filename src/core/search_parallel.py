@@ -6,7 +6,7 @@ Linus风格拆分 - 专注并行搜索逻辑
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .index import CodeIndex, SearchQuery
 
@@ -16,7 +16,7 @@ class ParallelSearchMixin:
 
     def __init__(self, index: CodeIndex):
         self.index = index
-        self._thread_pool = None
+        self._thread_pool: Optional[ThreadPoolExecutor] = None
         self._optimal_workers = min(4, max(1, len(index.files) // 10))
 
     @property

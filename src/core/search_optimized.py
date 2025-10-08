@@ -10,7 +10,7 @@ Search Engine - Linus式性能优化版本
 import re
 import time
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .cache import get_file_cache
 from .index import CodeIndex, SearchQuery, SearchResult
@@ -49,7 +49,9 @@ class OptimizedSearchEngine:
             "hierarchy": self._find_hierarchy_direct,
         }
 
-        search_method = search_ops.get(query.type, lambda q: [])
+        search_method: Callable[[SearchQuery], List[Any]] = search_ops.get(
+            query.type, lambda q: []
+        )
         matches = search_method(query)
 
         return SearchResult(

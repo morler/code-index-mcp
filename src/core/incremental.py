@@ -51,7 +51,7 @@ class FileChangeTracker:
 
     def get_file_mtime_from_stat(self, stat_info) -> float:
         """从stat对象获取修改时间 - 避免重复系统调用"""
-        return stat_info.st_mtime
+        return float(stat_info.st_mtime)
 
     def is_file_changed(self, file_path: str) -> bool:
         """检查文件是否变更 - Good Taste: 统一变更检测"""
@@ -94,7 +94,7 @@ class FileChangeTracker:
         """Phase2优化: 极简批量检测 - Linus原则: 简单胜过复杂"""
         import os
 
-        changed_files = []
+        changed_files: List[str] = []
 
         if not file_paths:
             return changed_files
@@ -215,7 +215,7 @@ class IncrementalIndexer:
         self.builder = IndexBuilder(index)
         self.tracker = FileChangeTracker()
 
-    def update_index(self, root_path: str = None) -> Dict[str, int]:
+    def update_index(self, root_path: Optional[str] = None) -> Dict[str, int]:
         """
         增量更新索引 - 主入口
 

@@ -7,7 +7,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, cast
 
 if TYPE_CHECKING:
     import tree_sitter
@@ -58,7 +58,7 @@ def handle_mcp_errors(func: Callable) -> Callable:
             # 确保所有成功响应包含success标志
             if isinstance(result, dict) and "success" not in result:
                 result["success"] = True
-            return result
+            return cast(Dict[str, Any], result)
         except Exception as e:
             # 统一错误响应格式
             return {"success": False, "error": str(e), "function": func.__name__}
@@ -372,8 +372,8 @@ class IndexBuilder:
                     # 如果在异步上下文中，使用线程
                     import threading
 
-                    result = [None]
-                    exception = [None]
+                    result: List[Optional[List[str]]] = [None]
+                    exception: List[Optional[Exception]] = [None]
 
                     def run_in_thread():
                         try:
@@ -490,8 +490,8 @@ class IndexBuilder:
                 content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
 
         tree = ast.parse(content, filename=file_path)
-        symbols = {}
-        imports = []
+        symbols: Dict[str, Any] = {}
+        imports: List[str] = []
 
         # Linus原则: 操作注册表消除特殊情况
         for node in ast.walk(tree):
@@ -525,8 +525,8 @@ class IndexBuilder:
             else:
                 content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
 
-        symbols = {}
-        imports = []
+        symbols: Dict[str, Any] = {}
+        imports: List[str] = []
 
         # 提取函数: fn function_name 或 fn (receiver) method_name
         for match in re.finditer(r"fn\s+(?:\([^)]*\)\s+)?(\w+)", content):
@@ -597,8 +597,8 @@ class IndexBuilder:
                 )
 
         tree = parser.parse(content)
-        symbols = {}
-        imports = []
+        symbols: Dict[str, Any] = {}
+        imports: List[str] = []
 
         # Linus原则: 统一Rust AST操作架构 - 零特殊情况
         _RUST_OPERATIONS = {
@@ -691,6 +691,10 @@ class IndexBuilder:
 
         content_hash = hashlib.md5(content).hexdigest()
 
+        # 初始化符号和导入列表
+        symbols: Dict[str, Any] = {}
+        imports: List[str] = []
+
         try:
             from .symbol_cache import get_cached_file_symbols
 
@@ -735,9 +739,6 @@ class IndexBuilder:
                 )
             except Exception:
                 pass
-
-        symbols = {}
-        imports = []
 
         # Linus原则: 语言特定的AST操作映射 - 零if/elif分支
         language_operations = self._get_language_operations(language)
@@ -896,9 +897,9 @@ class IndexBuilder:
         }
 
         # 合并通用操作和语言特定操作
-        operations = common_operations.copy()
+        operations: Dict[str, tuple] = common_operations.copy()
         if language in language_specific:
-            operations.update(language_specific[language])
+            operations.update(cast(Dict[str, tuple], language_specific[language]))
 
         return operations
 
@@ -906,7 +907,7 @@ class IndexBuilder:
         """从tree-sitter节点提取名称 - Linus风格递归搜索"""
         try:
             # Linus原则: 递归搜索identifier，处理所有可能的嵌套结构
-            def find_name_recursive(current_node, depth=0):
+            def find_name_recursive(current_node: Any, depth: int = 0) -> Optional[str]:
                 if depth > 3:  # 防止过深递归
                     return None
 

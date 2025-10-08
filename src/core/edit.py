@@ -173,9 +173,12 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
                         old_stripped, operation.new_content.strip()
                     )
             else:
+                file_len = len(current_content)
+                pattern_len = len(operation.old_content)
                 return (
                     False,
-                    f"Content mismatch - cannot find old_content in file. File length: {len(current_content)}, search pattern length: {len(operation.old_content)}",
+                    f"Content mismatch - cannot find old_content in file. "
+                    f"File length: {file_len}, search pattern length: {pattern_len}",
                 )
 
         # 4. 创建备份 - 全局统一目录
@@ -187,7 +190,12 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
 
             # 向上查找项目根目录（最多查找5层）
             for _ in range(5):
-                if (base_path / "src").exists() or (base_path / "pyproject.toml").exists() or (base_path / "setup.py").exists() or list(base_path.glob("*.py")):
+                if (
+                    (base_path / "src").exists()
+                    or (base_path / "pyproject.toml").exists()
+                    or (base_path / "setup.py").exists()
+                    or list(base_path.glob("*.py"))
+                ):
                     break
                 parent = base_path.parent
                 if parent == base_path:  # 已经到达根目录
@@ -202,7 +210,7 @@ def apply_edit(operation: EditOperation) -> Tuple[bool, Optional[str]]:
                 relative_path = file_path.relative_to(base_path)
             except ValueError:
                 # 如果无法计算相对路径，使用文件名
-                relative_path = file_path.name
+                relative_path = Path(file_path.name)
 
             timestamp = int(time.time())
             backup_name = f"{str(relative_path).replace('/', '_')}.{timestamp}.bak"
