@@ -383,7 +383,11 @@ class CodeIndex:
             global_backup_dir.mkdir(exist_ok=True)
 
             # 使用相对路径作为备份文件名的一部分，避免冲突
-            relative_path = file_path.relative_to(base_path)
+            try:
+                relative_path = file_path.relative_to(base_path)
+            except ValueError:
+                # 如果无法计算相对路径（文件不在base_path下），使用文件名
+                relative_path = Path(file_path.name)
             timestamp = int(time.time() * 1000000)  # 微秒级时间戳避免冲突
             backup_name = f"{str(relative_path).replace('/', '_')}.{timestamp}.bak"
             backup_path = global_backup_dir / backup_name
