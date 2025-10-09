@@ -256,39 +256,19 @@ class CodeIndex:
     def _edit_single_file(
         self, file_path: str, old_content: str, new_content: str
     ) -> Tuple[bool, Optional[str]]:
-        """单文件编辑 - 内部方法，假设已持有锁"""
+        """单文件编辑 - 内存备份，假设已持有锁"""
         try:
-            file_path_obj = Path(file_path)
-
-            # 验证文件状态
-            if not file_path_obj.exists():
-                return False, f"File not found: {file_path}"
-
-            current_content = file_path_obj.read_text(encoding="utf-8")
-
-            # 内容验证 - 支持部分匹配
-            if old_content and old_content.strip():
-                if old_content.strip() not in current_content:
-                    return False, f"Content mismatch in {file_path}"
-
-                # 如果是部分匹配，更新为完整替换
-                if old_content.strip() != current_content.strip():
-                    new_content = current_content.replace(
-                        old_content.strip(), new_content
-                    )
-
-            # 创建备份
-            backup_path = self._create_backup(file_path_obj)
-            if not backup_path:
-                return False, "Failed to create backup"
-
-            # 原子性写入
-            file_path_obj.write_text(new_content, encoding="utf-8")
-
-            # 更新索引 - 关键：保持数据一致性
-            self._update_file_in_index(str(file_path_obj))
-
-            return True, None
+            # 使用内存编辑操作
+            from ..code_index_mcp.core.edit_operations import get_memory_edit_operations
+            
+            edit_ops = get_memory_edit_operations(self.base_path)
+            success, error = edit_ops.edit_file_atomic(file_path, old_content, new_content)
+            
+            if success:
+                # 更新索引 - 关键：保持数据一致性
+                self._update_file_in_index(file_path)
+            
+            return success, error
 
         except Exception as e:
             return False, f"Edit failed: {e}"

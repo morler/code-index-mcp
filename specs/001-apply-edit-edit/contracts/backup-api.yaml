@@ -1,0 +1,238 @@
+openapi: 3.0.3
+info:
+  title: Backup Management API
+  description: API for managing file backup operations in Code Index MCP
+  version: 1.0.0
+
+paths:
+  /backup/create:
+    post:
+      summary: Create backup for file
+      operationId: createBackup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - file_path
+              properties:
+                file_path:
+                  type: string
+                  description: Path to file to backup
+                backup_location:
+                  $ref: '#/components/schemas/BackupLocation'
+                operation_id:
+                  type: string
+                  description: Unique operation identifier
+      responses:
+        '200':
+          description: Backup created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupResponse'
+        '400':
+          description: Invalid request
+        '500':
+          description: Backup creation failed
+
+  /backup/rollback:
+    post:
+      summary: Rollback using backup
+      operationId: rollbackBackup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - backup_path
+              properties:
+                backup_path:
+                  type: string
+                  description: Path to backup file
+                operation_id:
+                  type: string
+                  description: Operation identifier
+      responses:
+        '200':
+          description: Rollback successful
+        '404':
+          description: Backup not found
+        '500':
+          description: Rollback failed
+
+  /backup/cleanup:
+    post:
+      summary: Clean up old backups
+      operationId: cleanupBackups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backup_directory:
+                  type: string
+                  description: Backup directory path
+                keep_count:
+                  type: integer
+                  default: 100
+                  description: Number of recent backups to keep
+                max_age_days:
+                  type: integer
+                  default: 30
+                  description: Maximum age in days
+      responses:
+        '200':
+          description: Cleanup completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files_removed:
+                    type: integer
+                  space_freed:
+                    type: integer
+
+  /backup/integrity:
+    get:
+      summary: Check backup integrity
+      operationId: checkIntegrity
+      parameters:
+        - name: backup_directory
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Integrity check results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_files:
+                    type: integer
+                  valid_files:
+                    type: integer
+                  corrupted_files:
+                    type: integer
+                  quarantine_files:
+                    type: array
+                    items:
+                      type: string
+
+components:
+  schemas:
+    BackupFile:
+      type: object
+      required:
+        - path
+        - original_path
+        - timestamp
+        - size
+        - checksum
+      properties:
+        path:
+          type: string
+          description: Full path to backup file
+        original_path:
+          type: string
+          description: Original file path
+        timestamp:
+          type: integer
+          description: Microsecond timestamp
+        size:
+          type: integer
+          description: File size in bytes
+        checksum:
+          type: string
+          description: MD5 hash for integrity
+        operation_id:
+          type: string
+          description: Associated edit operation ID
+        is_corrupted:
+          type: boolean
+          default: false
+
+    BackupResponse:
+      type: object
+      required:
+        - success
+        - backup_file
+      properties:
+        success:
+          type: boolean
+        backup_file:
+          $ref: '#/components/schemas/BackupFile'
+        error_message:
+          type: string
+        fallback_used:
+          type: boolean
+          description: True if fallback location was used
+
+    BackupLocation:
+      type: string
+      enum:
+        - project_dir
+        - system_temp
+        - custom
+      default: project_dir
+
+    EditOperation:
+      type: object
+      required:
+        - file_path
+        - old_content
+        - new_content
+        - operation_id
+      properties:
+        file_path:
+          type: string
+        old_content:
+          type: string
+        new_content:
+          type: string
+        operation_id:
+          type: string
+        backup_path:
+          type: string
+        status:
+          $ref: '#/components/schemas/EditStatus'
+
+    EditStatus:
+      type: string
+      enum:
+        - pending
+        - backup_created
+        - edit_applied
+        - failed
+        - rolled_back
+
+    BackupDirectory:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+        max_size_bytes:
+          type: integer
+          default: 1073741824
+        max_file_count:
+          type: integer
+          default: 100
+        created_at:
+          type: string
+          format: date-time
+        total_size:
+          type: integer
+        file_count:
+          type: integer
