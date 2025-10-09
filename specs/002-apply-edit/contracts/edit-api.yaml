@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: Apply Edit API
+  description: File editing operations with in-memory backup and rollback
+  version: 2.0.0
+
+paths:
+  /edit:
+    post:
+      summary: Apply file edit with in-memory backup
+      operationId: applyEdit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - file_path
+                - new_content
+              properties:
+                file_path:
+                  type: string
+                  description: Absolute path to file to edit
+                  example: "/home/user/project/src/main.py"
+                new_content:
+                  type: string
+                  description: New file content
+                  example: "print('Hello World')"
+                create_backup:
+                  type: boolean
+                  description: Whether to create in-memory backup (always true)
+                  default: true
+                  deprecated: true
+      responses:
+        '200':
+          description: Edit operation completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  operation_id:
+                    type: string
+                    description: Unique identifier for the edit operation
+                  file_path:
+                    type: string
+                  bytes_written:
+                    type: integer
+                  duration_ms:
+                    type: number
+        '400':
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: object
+        '409':
+          description: Conflict - file locked by another operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  lock_owner:
+                    type: string
+                  lock_timeout:
+                    type: integer
+        '413':
+          description: Payload too large - file exceeds memory limit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  max_size_mb:
+                    type: integer
+                  actual_size_mb:
+                    type: number
+
+  /edit/{operation_id}/status:
+    get:
+      summary: Get edit operation status
+      operationId: getEditStatus
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operation status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [pending, in_progress, completed, failed, rolled_back]
+                  created_at:
+                    type: string
+                    format: date-time
+                  file_path:
+                    type: string
+                  memory_usage_mb:
+                    type: number
+
+  /memory/status:
+    get:
+      summary: Get memory backup status
+      operationId: getMemoryStatus
+      responses:
+        '200':
+          description: Memory usage statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_memory_mb:
+                    type: number
+                  max_memory_mb:
+                    type: integer
+                  usage_percent:
+                    type: number
+                  backup_count:
+                    type: integer
+                  oldest_backup_age_minutes:
+                    type: number
+
+components:
+  schemas:
+    EditOperation:
+      type: object
+      properties:
+        operation_id:
+          type: string
+        file_path:
+          type: string
+        status:
+          type: string
+          enum: [pending, in_progress, completed, failed, rolled_back]
+        created_at:
+          type: string
+          format: date-time
+        memory_size_bytes:
+          type: integer
+        duration_ms:
+          type: number
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        error_code:
+          type: string
+        details:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - ApiKeyAuth: []
