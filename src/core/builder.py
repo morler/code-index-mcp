@@ -750,6 +750,7 @@ class IndexBuilder:
         try:
             from .symbol_cache import cache_file_symbols
 
+            extraction_start = time.time()
             extraction_time = time.time() - extraction_start
 
             # 准备SCIP数据用于缓存

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 from src.code_index_mcp.indexing.json_index_manager import JSONIndexManager
+from src.code_index_mcp.indexing.unified_index_manager import UnifiedIndexManager
 from src.code_index_mcp.tools.config.project_config_tool import ProjectConfigTool
 
 
@@ -395,9 +396,9 @@ module.exports = {
 
             index_manager = JSONIndexManager()
             index_manager.set_project_path(temp_dir)
-            success = index_manager.build_index()
+            result = index_manager.build_index()
 
-            assert success == True, "Index build should succeed even for empty project"
+            assert result["status"] == "success", "Index build should succeed even for empty project"
 
             # Check that index was created (even if empty)
             index_data = config_tool.load_existing_index()

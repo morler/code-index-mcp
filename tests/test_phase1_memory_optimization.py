@@ -17,9 +17,15 @@ Phase 1 内存管理优化验证测试 - Linus风格直接验证
 import time
 import tempfile
 import os
-import psutil
 from pathlib import Path
 from typing import List, Dict
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 from src.core.cache import OptimizedFileCache, get_file_cache, clear_global_cache, _calculate_smart_cache_size
 

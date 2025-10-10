@@ -30,30 +30,22 @@ if FastMCP is not None:
         """
         return execute_tool(operation, **params)
 
-
     # ----- 核心工具组 - 保留最常用的 -----
-
 
     @mcp.tool()
     def set_project_path(path: str) -> Dict[str, Any]:
         """项目初始化 - 必需工具"""
         return execute_tool("set_project_path", path=path)
 
-
     @mcp.tool()
     def search_code(pattern: str, search_type: str = "text") -> Dict[str, Any]:
         """统一搜索 - 合并所有搜索功能"""
         return execute_tool("search_code", pattern=pattern, search_type=search_type)
 
-
     @mcp.tool()
     def find_files(pattern: str) -> Dict[str, Any]:
         """文件查找 - 高频使用"""
         return execute_tool("find_files", pattern=pattern)
-
-
-    # ----- 文件操作组 - 合并读取和编辑 -----
-
 
     @mcp.tool()
     def get_file_content(
@@ -71,7 +63,6 @@ if FastMCP is not None:
             show_line_numbers=show_line_numbers,
         )
 
-
     @mcp.tool()
     def get_symbol_body(
         symbol_name: str,
@@ -88,47 +79,30 @@ if FastMCP is not None:
             show_line_numbers=show_line_numbers,
         )
 
-
-    # ----- 语义编辑组 - 合并编辑操作 -----
-
-
     @mcp.tool()
     def rename_symbol(old_name: str, new_name: str) -> Dict[str, Any]:
         """重命名符号 - 跨文件安全重命名"""
         return execute_tool("rename_symbol", old_name=old_name, new_name=new_name)
 
-
     @mcp.tool()
     def add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
         """添加导入语句 - 智能插入位置"""
-        return execute_tool(
-            "add_import", file_path=file_path, import_statement=import_statement
-        )
-
+        return execute_tool("add_import", file_path=file_path, import_statement=import_statement)
 
     @mcp.tool()
     def apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
         """应用编辑操作 - 原子操作和备份"""
         return execute_tool(
-            "apply_edit",
-            file_path=file_path,
-            old_content=old_content,
-            new_content=new_content,
+            "apply_edit", file_path=file_path, old_content=old_content, new_content=new_content
         )
 
-
-    # 注意：其他17个工具通过unified_tool(operation, params)访问
-    # 例如：unified_tool("find_references", '{"symbol_name": "function_name"}')
-
-
     def main():
+        """启动MCP服务器"""
         mcp.run()
 
-
-# 向后兼容：当MCP不可用时提供空实现
 else:
+    # 降级模式 - 没有MCP时的最小实现
     def unified_tool(operation: str, **params) -> Dict[str, Any]:
-        """统一工具入口 - 空实现"""
         return {"success": False, "error": "MCP not available"}
 
     def set_project_path(path: str) -> Dict[str, Any]:
