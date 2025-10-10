@@ -47,28 +47,39 @@ class BackupSystem:
     This is the main entry point for all memory-based backup operations.
     """
     
-    def __init__(self, 
-                 max_memory_mb: float = 50.0,
-                 max_file_size_mb: float = 10.0,
-                 lock_timeout_seconds: float = 30.0):
-        self.max_memory_mb = max_memory_mb
-        self.max_file_size_mb = max_file_size_mb
-        self.lock_timeout_seconds = lock_timeout_seconds
+    def __init__(self):
+        # Load configuration
+        try:
+            from ..config import get_memory_backup_config
+            config = get_memory_backup_config()
+            
+            self.max_memory_mb = config.max_memory_mb
+            self.max_file_size_mb = config.max_file_size_mb
+            self.lock_timeout_seconds = config.backup_timeout_seconds
+        except ImportError:
+            # Fallback to defaults
+            self.max_memory_mb = 50.0
+            self.max_file_size_mb = 10.0
+            self.lock_timeout_seconds = 30.0
+        except Exception:
+            self.max_memory_mb = 50.0
+            self.max_file_size_mb = 10.0
+            self.lock_timeout_seconds = 30.0
         
         # Core components
-        self.memory_manager = MemoryBackupManager(max_memory_mb=max_memory_mb)
+        self.memory_manager = MemoryBackupManager()
         self.memory_monitor = get_memory_monitor()
         
         # Thread safety
         self._lock = threading.RLock()
         
-        # Configure memory monitoring
-        self.memory_monitor.max_memory_mb = max_memory_mb
+# Configure memory monitoring
+        self.memory_monitor.max_memory_mb = self.max_memory_mb
         self.memory_monitor.threshold = MemoryThreshold(
             warning_percent=80.0,
             critical_percent=90.0,
-            absolute_limit_mb=max_memory_mb + 20.0,  # 20MB buffer
-            backup_limit_mb=max_memory_mb
+            absolute_limit_mb=self.max_memory_mb + 20.0,  # 20MB buffer
+            backup_limit_mb=self.max_memory_mb,
         )
     
     def backup_file(self, file_path: Union[str, Path]) -> str:
@@ -260,6 +271,13 @@ class BackupSystem:
                 # Write new content
                 file_path.write_text(new_content, encoding='utf-8')
                 
+                # Update file state to reflect new content for rollback validation
+                try:
+                    operation.file_state = FileState.from_file(file_path)
+                except Exception:
+                    # If we can't update file state, clear it to allow rollback
+                    operation.file_state = None
+                
                 # Update operation status
                 operation.set_status(EditStatus.COMPLETED)
                 
@@ -351,15 +369,9 @@ def get_backup_system() -> BackupSystem:
         _global_backup_system = BackupSystem()
     return _global_backup_system
 
-def create_backup_system(max_memory_mb: float = 50.0,
-                        max_file_size_mb: float = 10.0,
-                        lock_timeout_seconds: float = 30.0) -> BackupSystem:
-    """Create new backup system instance"""
-    return BackupSystem(
-        max_memory_mb=max_memory_mb,
-        max_file_size_mb=max_file_size_mb,
-        lock_timeout_seconds=lock_timeout_seconds
-    )
+def create_backup_system() -> BackupSystem:
+    """Create backup system with configuration"""
+    return BackupSystem()
 
 # Convenience functions for common operations
 def backup_file(file_path: Union[str, Path]) -> str:

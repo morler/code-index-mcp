@@ -1,231 +1,221 @@
-# Implementation Tasks: 取消apply_edit备份功能
+---
+description: "Task list for removing apply_edit backup functionality"
+---
 
-**Branch**: `002-apply-edit` | **Date**: 2025-01-09 | **Spec**: [spec.md](spec.md)
-**Total Tasks**: 15 | **Estimated Effort**: 2-3 days
+# Tasks: 取消apply_edit备份功能
 
-## Implementation Strategy
+**Input**: Design documents from `/specs/002-apply-edit/`
+**Prerequisites**: plan.md (required), spec.md (required for user stories), data-model.md, contracts/edit-api.yaml
 
-**MVP Scope**: User Story 1 only (disable backup functionality)  
-**Incremental Delivery**: Add rollback mechanism after core functionality works  
-**Parallel Opportunities**: Memory management and file locking can be developed independently
+**Tests**: Tests are included as this is a critical core functionality change affecting data safety.
+
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+## Format: `[ID] [P?] [Story] Description`
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2)
+- Include exact file paths in descriptions
+
+## Path Conventions
+- **Single project**: `src/`, `tests/` at repository root
+- Paths shown below follow the existing Code Index MCP structure
 
 ---
 
-## Phase 1: Setup Tasks
+## Phase 1: Setup (Shared Infrastructure)
 
-**Goal**: Project initialization and shared infrastructure
+**Purpose**: Project initialization and basic structure
 
-### T001: ✅ Create performance baseline tests
-**File**: `tests/test_performance.py`  
-**Description**: Establish current performance metrics for apply_edit with disk backup  
-**Acceptance**: Measure average response time, disk usage, and memory usage for 100 test edits  
-**Status**: COMPLETED - Baseline established: 8.8ms avg response time, 0.1MB disk usage
-
-### T002: ✅ Setup memory monitoring infrastructure  
-**File**: `src/code_index_mcp/core/memory_monitor.py`  
-**Description**: Create memory usage tracking utilities for backup operations  
-**Acceptance**: Can track current memory usage, set limits, and alert on threshold exceeded  
-**Status**: COMPLETED - MemoryMonitor class implemented with cross-platform support
+- [ ] T001 Create feature branch `002-apply-edit` from main
+- [ ] T002 [P] Verify existing test infrastructure in tests/
+- [ ] T003 [P] Setup performance baseline measurement for current apply_edit operations
+- [ ] T004 [P] Document current backup behavior in tests/test_backup_baseline.py
+- [ ] T005 [P] Setup memory usage monitoring for comparison metrics
 
 ---
 
-## Phase 2: Foundational Tasks
+## Phase 2: Foundational (Blocking Prerequisites)
 
-**Goal**: Blocking prerequisites that must complete before any user story implementation
+**Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-### T003: ✅ Implement cross-platform file locking mechanism
-**File**: `src/code_index_mcp/core/file_lock.py`  
-**Description**: OS-level file locking (fcntl for Unix, LockFileEx for Windows)  
-**Acceptance**: Prevents concurrent edits on same file across processes  
-**Status**: COMPLETED - FileLock class with Windows fallback implemented
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-### T004: ✅ Create memory-based backup data structures
-**File**: `src/code_index_mcp/core/edit_models.py`  
-**Description**: Implement EditOperation, FileState, and EditStatus classes from data model  
-**Acceptance**: All dataclasses defined with proper validation and type hints  
-**Status**: COMPLETED - All data structures implemented with LRU memory management
+- [ ] T006 Analyze current apply_edit implementation in src/code_index_mcp/core/edit.py
+- [ ] T007 Analyze current backup implementation in src/code_index_mcp/core/backup.py
+- [ ] T008 [P] Create MemoryBackupManager data structure in src/code_index_mcp/core/memory_backup.py
+- [ ] T009 [P] Create FileState data structure in src/code_index_mcp/core/file_state.py
+- [ ] T010 [P] Create EditOperation data structure in src/code_index_mcp/core/edit_operation.py
+- [ ] T011 Implement file locking mechanism in src/code_index_mcp/core/file_lock.py
+- [ ] T012 [P] Configure memory monitoring and LRU eviction system with 50MB limit in src/code_index_mcp/core/memory_monitor.py
+- [ ] T012-A [P] Add file size validation logic (10MB limit) in src/code_index_mcp/core/operations.py
 
----
-
-## Phase 3: User Story 1 - 禁用文件编辑备份 (P1)
-
-**Goal**: Remove disk backup functionality while maintaining edit operations  
-**Independent Test**: Edit file and verify no backup files are created  
-**Story Completion Criteria**: All acceptance scenarios from US1 pass
-
-### T005: [US1] Implement MemoryBackupManager core functionality
-**File**: `src/code_index_mcp/core/backup.py`  
-**Description**: Replace disk-based backup with in-memory LRU cache system  
-**Acceptance**: Can add, retrieve, and remove file backups from memory only
-
-### T006: [US1] [P] Modify edit workflow to remove disk backup operations
-**File**: `src/code_index_mcp/core/edit.py`  
-**Description**: Remove all backup file creation/deletion logic from edit operations  
-**Acceptance**: Edit operations complete without any disk backup files
-
-### T007: [US1] [P] Update unified_tool interface for memory backup
-**File**: `src/code_index_mcp/server_unified.py`  
-**Description**: Ensure unified_tool routes edit operations through new memory backup system  
-**Acceptance**: apply_edit calls work through unified interface without backup files
-
-### T008: [US1] Implement memory usage validation and limits
-**File**: `src/code_index_mcp/core/backup.py`  
-**Description**: Add file size checks and memory limit enforcement with LRU eviction  
-**Acceptance**: Files >10MB are rejected, memory usage stays within configured limits
-
-### T009: [US1] Create edit operation status tracking
-**File**: `src/code_index_mcp/core/operations.py`  
-**Description**: Implement operation ID generation and status tracking for edit operations  
-**Acceptance**: Can query operation status and track edit lifecycle
-
-### T010: [US1] Update API contracts to reflect memory backup changes
-**File**: `src/code_index_mcp/core/edit.py`  
-**Description**: Modify API responses to include memory usage info and deprecate backup parameters  
-**Acceptance**: API matches updated contract schema with memory status endpoints
-
-### T011: [US1] Create integration tests for backup removal
-**File**: `tests/test_edit_operations.py`  
-**Description**: Test that edit operations work without creating backup files  
-**Acceptance**: All US1 acceptance scenarios pass with 100% success rate
-
-**🏁 Phase 3 Checkpoint**: User Story 1 complete - backup functionality removed
+**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
 ---
 
-## Phase 4: User Story 2 - 保持错误回滚机制 (P2)
+## Phase 3: User Story 1 - 禁用文件编辑备份 (Priority: P1) 🎯 MVP
 
-**Goal**: Implement rollback functionality using memory backups  
-**Independent Test**: Simulate edit failures and verify file restoration  
-**Story Completion Criteria**: All acceptance scenarios from US2 pass
+**Goal**: 用户在使用apply_edit工具编辑文件时，系统不再自动创建备份文件，直接进行编辑操作
 
-### T012: [US2] Implement memory-based rollback mechanism
-**File**: `src/code_index_mcp/core/edit.py`  
-**Description**: Add automatic file content restoration from memory on edit failures  
-**Acceptance**: Failed edits restore original file content completely
+**Independent Test**: 可以通过编辑文件并验证没有备份文件生成来独立测试此功能
 
-### T013: [US2] [P] Add file corruption detection and handling
-**File**: `src/code_index_mcp/core/edit.py`  
-**Description**: Implement checksum validation to detect file modifications during editing  
-**Acceptance**: Corrupted files trigger rollback with appropriate error messages
+### Tests for User Story 1 ⚠️
 
-### T014: [US2] Create error handling and exception classes
-**File**: `src/code_index_mcp/core/exceptions.py`  
-**Description**: Define EditOperationError, MemoryLimitExceededError, FileLockError, FileCorruptionError  
-**Acceptance**: All error types properly raised and caught with descriptive messages
+**NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-### T015: [US2] Create rollback integration tests
-**File**: `tests/test_integration.py`  
-**Description**: Test rollback scenarios including crashes, interruptions, and corruption  
-**Acceptance**: All US2 acceptance scenarios pass with 100% rollback success
+- [ ] T013 [P] [US1] Contract test for /edit endpoint in tests/contract/test_edit_api.py
+- [ ] T014 [P] [US1] Integration test for edit without backup creation in tests/integration/test_edit_no_backup.py
+- [ ] T015 [P] [US1] Performance test comparing edit times before/after in tests/performance/test_edit_performance.py
 
-**🏁 Phase 4 Checkpoint**: User Story 2 complete - rollback mechanism implemented
+### Implementation for User Story 1
+
+- [ ] T016 [P] [US1] Modify EditOperation model in src/code_index_mcp/core/edit_operation.py
+- [ ] T017 [P] [US1] Modify MemoryBackupManager in src/code_index_mcp/core/memory_backup.py
+- [ ] T018 [US1] Remove backup file creation logic from src/code_index_mcp/core/edit.py
+- [ ] T018-A [US1] Remove existing disk backup files and cleanup backup directories in src/code_index_mcp/core/backup.py
+- [ ] T018-B [US1] Update backup.py to remove all disk-related backup functions and constants
+- [ ] T019 [US1] Update apply_edit tool in src/code_index_mcp/server_unified.py to use memory backup
+- [ ] T020 [US1] Update mcp_tools.py tool_apply_edit function for memory backup
+- [ ] T021 [US1] Add validation for 10MB file size limits in src/code_index_mcp/core/operations.py
+- [ ] T022 [US1] Add memory usage monitoring in src/code_index_mcp/core/memory_monitor.py
+- [ ] T023 [US1] Implement edit operation logging without backup content in src/code_index_mcp/core/edit_logger.py
+
+**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
+
+---
+
+## Phase 4: User Story 2 - 保持错误回滚机制 (Priority: P2)
+
+**Goal**: 虽然取消了备份功能，但系统在编辑失败时仍能正确回滚到原始状态
+
+**Independent Test**: 可以通过模拟编辑失败场景来验证回滚机制是否正常工作
+
+### Tests for User Story 2 ⚠️
+
+- [ ] T024 [P] [US2] Contract test for edit failure rollback in tests/contract/test_edit_rollback.py
+- [ ] T025 [P] [US2] Integration test for memory-based rollback in tests/integration/test_memory_rollback.py
+- [ ] T026 [P] [US2] Concurrent edit failure test in tests/integration/test_concurrent_rollback.py
+
+### Implementation for User Story 2
+
+- [ ] T027 [P] [US2] Implement rollback mechanism in MemoryBackupManager in src/code_index_mcp/core/memory_backup.py
+- [ ] T028 [US2] Update FileState for rollback validation in src/code_index_mcp/core/file_state.py
+- [ ] T029 [US2] Modify edit operations to support rollback in src/code_index_mcp/core/edit.py
+- [ ] T030 [US2] Add crash recovery mechanism in src/code_index_mcp/core/backup.py
+- [ ] T031 [US2] Update error handling in src/code_index_mcp/core/operations.py
+
+**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
 ---
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-**Goal**: Performance optimization and final integration
+**Purpose**: Improvements that affect multiple user stories
 
-### T016: Performance optimization and benchmarking
-**File**: `tests/test_performance.py`  
-**Description**: Compare new memory-based performance against baseline measurements  
-**Acceptance**: Achieve 20% response time reduction and 50% disk space savings
-
-### T017: Update documentation and migration guides
-**File**: `docs/apply_edit_migration.md`  
-**Description**: Document changes, migration steps, and new configuration options  
-**Acceptance**: Complete quickstart guide and API documentation updates
-
-### T018: Final integration testing and validation
-**File**: `tests/test_final_integration.py`  
-**Description**: End-to-end testing of all functionality with performance validation  
-**Acceptance**: All tests pass, performance targets met, backward compatibility maintained
+- [ ] T032 [P] Update API documentation in docs/api/
+- [ ] T033 [P] Update user documentation in README.md
+- [ ] T034 Code cleanup and refactoring in src/code_index_mcp/core/
+- [ ] T035 Performance optimization across all edit operations
+- [ ] T036 [P] Additional unit tests in tests/unit/test_memory_backup.py
+- [ ] T037 [P] Additional unit tests in tests/unit/test_file_lock.py
+- [ ] T038 Security hardening for memory operations
+- [ ] T039 Run quickstart.md validation
+- [ ] T040 Constitutional compliance check: verify files <200 lines, <3 indentation levels
+- [ ] T041 Constitutional compliance check: verify functions <30 lines
+- [ ] T042 Constitutional compliance check: verify unified interface usage
+- [ ] T043 Constitutional compliance check: verify SCIP protocol usage for symbols
+- [ ] T044 Performance validation: sub-100ms operations, <100MB memory usage
+- [ ] T045 Memory usage validation: verify <50MB limit for backup cache
+- [ ] T046 Final integration tests across all user stories
 
 ---
 
-## Dependencies
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (Phase 1)**: No dependencies - can start immediately
+- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
+- **User Stories (Phase 3-4)**: All depend on Foundational phase completion
+  - User stories can then proceed in parallel (if staffed)
+  - Or sequentially in priority order (P1 → P2)
+- **Polish (Final Phase)**: Depends on all desired user stories being complete
 
 ### User Story Dependencies
-```
-US1 (P1): T005 → T006 → T007 → T008 → T009 → T010 → T011
-US2 (P2): T012 → T013 → T014 → T015
-```
 
-### Cross-Story Dependencies
-- US2 depends on US1 completion (needs memory backup infrastructure)
-- All stories depend on Phase 1-2 completion
+- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories
+- **User Story 2 (P2)**: Can start after Foundational (Phase 2) - Depends on US1 memory backup infrastructure
 
-### Critical Path
-```
-T001 → T002 → T003 → T004 → US1 Tasks → US2 Tasks → Polish Tasks
-```
+### Within Each User Story
+
+- Tests MUST be written and FAIL before implementation
+- Models before services
+- Services before endpoints
+- Core implementation before integration
+- Story complete before moving to next priority
+
+### Parallel Opportunities
+
+- All Setup tasks marked [P] can run in parallel
+- All Foundational tasks marked [P] can run in parallel (within Phase 2)
+- Once Foundational phase completes, User Story 1 can start
+- User Story 2 can start after User Story 1 memory infrastructure is ready
+- All tests for a user story marked [P] can run in parallel
+- Models within a story marked [P] can run in parallel
 
 ---
 
-## Parallel Execution Opportunities
+## Parallel Example: User Story 1
 
-### Within User Story 1
 ```bash
-# Parallel execution group 1
-T005 & T006 & T007  # Core functionality in different files
+# Launch all tests for User Story 1 together:
+Task: "Contract test for /edit endpoint in tests/contract/test_edit_api.py"
+Task: "Integration test for edit without backup creation in tests/integration/test_edit_no_backup.py"
+Task: "Performance test comparing edit times before/after in tests/performance/test_edit_performance.py"
 
-# Parallel execution group 2  
-T008 & T009 & T010  # Advanced features in different files
-
-# Sequential
-T011 (after all above complete)
-```
-
-### Within User Story 2
-```bash
-# Parallel execution group 1
-T012 & T013 & T014  # Rollback components in different files
-
-# Sequential
-T015 (after all above complete)
+# Launch all models for User Story 1 together:
+Task: "Modify EditOperation model in src/code_index_mcp/core/edit_operation.py"
+Task: "Modify MemoryBackupManager in src/code_index_mcp/core/memory_backup.py"
 ```
 
 ---
 
-## Independent Test Criteria
+## Implementation Strategy
 
-### User Story 1 Test Independence
-- **Test Setup**: Create test files with known content
-- **Test Execution**: Run apply_edit operations
-- **Test Validation**: Verify no .backup files exist and content is correctly updated
-- **Test Cleanup**: Remove test files
+### MVP First (User Story 1 Only)
 
-### User Story 2 Test Independence  
-- **Test Setup**: Create test files and simulate various failure conditions
-- **Test Execution**: Trigger edit failures (disk full, permissions, crashes)
-- **Test Validation**: Verify original file content is completely restored
-- **Test Cleanup**: Remove test files and locks
+1. Complete Phase 1: Setup
+2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+3. Complete Phase 3: User Story 1
+4. **STOP and VALIDATE**: Test User Story 1 independently
+5. Deploy/demo if ready
 
----
+### Incremental Delivery
 
-## Risk Mitigation
-
-### High-Risk Tasks
-- **T003**: File locking complexity across platforms
-- **T008**: Memory management and LRU eviction correctness
-- **T012**: Rollback reliability under various failure conditions
-
-### Mitigation Strategies
-- Extensive cross-platform testing for file locking
-- Memory profiling and stress testing for LRU cache
-- Chaos engineering for rollback scenarios
-
----
-
-## Success Metrics
+1. Complete Setup + Foundational → Foundation ready
+2. Add User Story 1 → Test independently → Deploy/Demo (MVP!)
+3. Add User Story 2 → Test independently → Deploy/Demo
+4. Each story adds value without breaking previous stories
 
 ### Performance Targets
-- **Response Time**: ≤120ms (20% improvement from 150ms baseline)
-- **Memory Usage**: ≤50MB for backup cache
-- **Disk Usage**: 50% reduction (no backup files)
-- **Rollback Success**: 100% for all failure scenarios
 
-### Quality Targets
-- **Test Coverage**: ≥95% for modified code
-- **Code Complexity**: ≤3 indentation levels, ≤30 lines per function
-- **Constitution Compliance**: 100% (no violations)
+- **Response Time**: 20% reduction compared to current disk backup
+- **Memory Usage**: <50MB for backup cache
+- **Disk Space**: 50% reduction (no backup files)
+- **File Size Limit**: 10MB maximum for memory backup
+- **Concurrent Operations**: Support multiple simultaneous edits
+
+---
+
+## Notes
+
+- [P] tasks = different files, no dependencies
+- [Story] label maps task to specific user story for traceability
+- Each user story should be independently completable and testable
+- Verify tests fail before implementing
+- Monitor memory usage throughout development
+- Performance testing is critical for this feature
+- File locking mechanism must be thoroughly tested
+- Commit after each task or logical group
+- Stop at any checkpoint to validate story independently
+- Avoid: memory leaks, file corruption, performance regressions

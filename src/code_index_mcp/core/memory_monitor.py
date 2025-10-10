@@ -176,6 +176,30 @@ class MemoryMonitor:
             
             return True, None
     
+    def _check_limits_without_update(self, operation_name: str = "backup") -> tuple[bool, Optional[str]]:
+        """
+        Check memory limits without updating current usage
+        Used internally by record_operation to avoid resetting manual values
+        """
+        # Check absolute limit first
+        if self.threshold.check_absolute_limit(self.current_usage_mb):
+            error = f"Absolute memory limit exceeded: {self.current_usage_mb:.1f}MB > {self.threshold.absolute_limit_mb}MB"
+            self._trigger_alert("critical", error, {"operation": operation_name})
+            return False, error
+        
+        # Check critical threshold
+        if self.threshold.check_critical(self.current_usage_mb, self.max_memory_mb):
+            error = f"Critical memory threshold: {self.current_usage_mb:.1f}MB ({self.current_usage_mb/self.max_memory_mb*100:.1f}%)"
+            self._trigger_alert("critical", error, {"operation": operation_name})
+            return False, error
+        
+        # Check warning threshold (just alert, don't fail)
+        if self.threshold.check_warning(self.current_usage_mb, self.max_memory_mb):
+            warning = f"Memory usage warning: {self.current_usage_mb:.1f}MB ({self.current_usage_mb/self.max_memory_mb*100:.1f}%)"
+            self._trigger_alert("warning", warning, {"operation": operation_name})
+        
+        return True, None
+    
     def record_operation(self, operation_size_mb: float, operation_type: str = "backup") -> None:
         """Record a memory operation and update tracking"""
         with self._lock:
@@ -194,8 +218,8 @@ class MemoryMonitor:
             if len(self.history) > self.history_size:
                 self.history.pop(0)
             
-            # Check limits after operation
-            self.check_memory_limits(operation_type)
+            # Check limits after operation (without updating current usage)
+            self._check_limits_without_update(operation_type)
     
     def release_operation(self, operation_size_mb: float) -> None:
         """Release memory from completed operation"""

@@ -3,7 +3,7 @@
 **Feature Branch**: `002-apply-edit`  
 **Created**: 2025-01-09  
 **Status**: Draft  
-**Input**: User description: "取消项目apply_edi工境编辑文件时的备份功能"
+**Input**: User description: "取消项目apply_edit工具编辑文件时的备份功能"
 
 ## Clarifications
 
@@ -50,44 +50,37 @@
 
 ### Edge Cases
 
-- 当编辑操作被用户手动中断时会发生什么？
-- 磁盘空间不足时如何处理？
-- 网络文件系统上的编辑操作如何处理？
-- 多进程/多用户同时编辑同一文件时，系统通过文件锁定机制排队处理
-- 超过内存限制的大文件编辑操作将被拒绝，防止内存溢出
+- **用户手动中断**: 编辑操作被用户中断时，内存中的原始内容自动恢复，文件保持编辑前状态
+- **磁盘空间不足**: 由于无备份文件创建，磁盘空间不足不影响编辑操作，仅影响最终文件写入
+- **网络文件系统**: 通过文件锁定机制确保网络文件系统上的编辑操作原子性，失败时完整回滚
+- **并发编辑冲突**: 多进程/多用户同时编辑同一文件时，系统通过文件锁定机制排队处理，确保数据一致性
+- **大文件处理**: 超过10MB文件大小或50MB内存限制的编辑操作将被拒绝，返回明确错误信息
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: 系统必须在apply_edit操作时不创建备份文件（完全移除，无配置选项）
-- **FR-002**: 系统必须在编辑失败时能够回滚到原始文件状态（通过内存中保留原始内容实现，超过内存限制时拒绝操作）  
+- **FR-001**: 系统必须在apply_edit操作时不创建磁盘备份文件，保留内存备份机制用于错误回滚（完全移除磁盘备份，无配置选项）
+- **FR-002**: 系统必须在编辑失败时能够回滚到原始文件状态（通过MemoryBackupManager在内存中保留原始内容实现，由memory_monitor.py负责监控50MB内存限制，operations.py负责检查10MB文件大小限制，超限时拒绝操作）  
 - **FR-003**: 用户必须能够正常使用apply_edit进行文件编辑
 - **FR-004**: 系统必须记录编辑操作但不存储备份内容
 - **FR-005**: 系统必须在编辑完成后清理所有临时数据
 
 ### Code Index MCP Constitutional Constraints
 
-- **FR-006**: System MUST use direct data manipulation - no service abstractions or wrapper classes
-- **FR-007**: All operations MUST route through unified interface - no specialized tool functions
-- **FR-008**: Symbol operations MUST use SCIP protocol with tree-sitter parsing for core languages
-- **FR-009**: System MUST process only changed files for incremental updates
-- **FR-010**: Files MUST stay under 200 lines with maximum 3 indentation levels
-- **FR-011**: Functions MUST be under 30 lines without explicit justification
-- **FR-012**: System MUST maintain sub-100ms response times for file operations
-- **FR-013**: Memory usage MUST stay under 100MB for typical projects
+详细宪法约束请参考 plan.md 中的 Constitution Check 部分，本规格遵循所有宪法要求。
 
 ### Key Entities
 
 - **EditOperation**: 表示文件编辑操作，包含文件路径、编辑内容和操作状态
-- **BackupManager**: 管理备份策略的组件，需要修改以禁用备份功能
-- **FileState**: 跟踪文件编辑前后的状态，用于回滚操作
+- **MemoryBackupManager**: 内存备份管理器，负责LRU缓存策略和内存中的原始内容保留，完全替代磁盘备份功能
+- **FileState**: 文件状态跟踪器，用于回滚操作时验证文件完整性
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: apply_edit操作响应时间减少20%（相比当前带备份功能的平均响应时间）
-- **SC-002**: 磁盘空间使用量减少，每个编辑操作节省原文件大小的存储空间
+- **SC-001**: apply_edit操作响应时间达到sub-100ms目标（基于当前150ms基准，实现33%+性能提升，基于当前带备份功能的平均响应时间基准测试）
+- **SC-002**: 磁盘空间使用量减少50%，每个编辑操作节省原文件大小的存储空间（无备份文件生成）
 - **SC-003**: 100%的编辑失败场景能正确回滚到原始状态
-- **SC-004**: 用户编辑操作完成率保持在99%以上
+- **SC-004**: 用户编辑操作完成率保持在99%以上（失败场景包括：内存不足超过50MB限制、文件大小超过10MB、文件锁定冲突、磁盘空间不足、权限错误）

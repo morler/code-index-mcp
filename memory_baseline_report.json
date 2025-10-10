@@ -1,0 +1,199 @@
+{
+  "baseline": {
+    "rss_mb": 0,
+    "vms_mb": 0
+  },
+  "statistics": {
+    "total_operations": 9,
+    "avg_rss_change_mb": 0.0,
+    "max_rss_change_mb": 0,
+    "min_rss_change_mb": 0,
+    "avg_vms_change_mb": 0.0,
+    "max_vms_change_mb": 0,
+    "min_vms_change_mb": 0,
+    "avg_tracemalloc_change_mb": 0.0009142557779947916,
+    "max_tracemalloc_change_mb": 0.0025081634521484375,
+    "min_tracemalloc_change_mb": 0.00042819976806640625,
+    "avg_duration_ms": 15.01716673374176,
+    "max_duration_ms": 37.95630019158125,
+    "min_duration_ms": 7.393100066110492
+  },
+  "measurements": [
+    {
+      "name": "edit_small.py",
+      "duration_ms": 20.319800125434995,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.037537574768066406,
+      "tracemalloc_peak_mb": 4.070439338684082,
+      "tracemalloc_current_diff_mb": 0.0025081634521484375,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true,
+        "error": null
+      }
+    },
+    {
+      "name": "edit_medium.py",
+      "duration_ms": 7.841699989512563,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.039114952087402344,
+      "tracemalloc_peak_mb": 4.070439338684082,
+      "tracemalloc_current_diff_mb": 0.00042819976806640625,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true,
+        "error": null
+      }
+    },
+    {
+      "name": "edit_large.py",
+      "duration_ms": 9.813500102609396,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.040782928466796875,
+      "tracemalloc_peak_mb": 4.070439338684082,
+      "tracemalloc_current_diff_mb": 0.0004892349243164062,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true,
+        "error": null
+      }
+    },
+    {
+      "name": "edit_very_large.py",
+      "duration_ms": 18.146000104025006,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.04248523712158203,
+      "tracemalloc_peak_mb": 6.938567161560059,
+      "tracemalloc_current_diff_mb": 0.0005502700805664062,
+      "tracemalloc_peak_diff_mb": 2.8681278228759766,
+      "result": {
+        "success": true,
+        "error": null
+      }
+    },
+    {
+      "name": "rollback_small.py",
+      "duration_ms": 7.393100066110492,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.044304847717285156,
+      "tracemalloc_peak_mb": 6.938567161560059,
+      "tracemalloc_current_diff_mb": 0.0005502700805664062,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true
+      }
+    },
+    {
+      "name": "rollback_medium.py",
+      "duration_ms": 9.979099966585636,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.04604148864746094,
+      "tracemalloc_peak_mb": 6.938567161560059,
+      "tracemalloc_current_diff_mb": 0.0005502700805664062,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true
+      }
+    },
+    {
+      "name": "rollback_large.py",
+      "duration_ms": 9.719999972730875,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.04773521423339844,
+      "tracemalloc_peak_mb": 6.938567161560059,
+      "tracemalloc_current_diff_mb": 0.000507354736328125,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true
+      }
+    },
+    {
+      "name": "rollback_very_large.py",
+      "duration_ms": 13.98500008508563,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.049475669860839844,
+      "tracemalloc_peak_mb": 6.938567161560059,
+      "tracemalloc_current_diff_mb": 0.0005502700805664062,
+      "tracemalloc_peak_diff_mb": 0.0,
+      "result": {
+        "success": true
+      }
+    },
+    {
+      "name": "concurrent_edits",
+      "duration_ms": 37.95630019158125,
+      "rss_before_mb": 0,
+      "rss_after_mb": 0,
+      "rss_diff_mb": 0,
+      "vms_before_mb": 0,
+      "vms_after_mb": 0,
+      "vms_diff_mb": 0,
+      "tracemalloc_current_mb": 0.05277729034423828,
+      "tracemalloc_peak_mb": 6.949007034301758,
+      "tracemalloc_current_diff_mb": 0.002094268798828125,
+      "tracemalloc_peak_diff_mb": 0.010439872741699219,
+      "result": [
+        {
+          "name": "small",
+          "success": true,
+          "error": null
+        },
+        {
+          "name": "medium",
+          "success": true,
+          "error": null
+        },
+        {
+          "name": "large",
+          "success": true,
+          "error": null
+        },
+        {
+          "name": "very_large",
+          "success": true,
+          "error": null
+        }
+      ]
+    }
+  ]
+}

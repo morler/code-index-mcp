@@ -260,20 +260,50 @@ class MemoryBackupManager:
         access_order: List of file paths in LRU order
         max_backups: Maximum number of backup entries
     """
-    max_memory_mb: int = 50
+    # Configuration loaded from config system
+    max_memory_mb: int = field(init=False)
+    max_file_size_mb: int = field(init=False)
+    max_backups: int = field(init=False)
+    backup_timeout_seconds: int = field(init=False)
+    memory_warning_threshold: float = field(init=False)
+    
+    # Runtime state
     current_memory_mb: float = 0.0
     backup_cache: Dict[str, EditOperation] = field(default_factory=dict)
     access_order: List[str] = field(default_factory=list)
-    max_backups: int = 1000
     
     # Thread safety
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
+    
+    def __post_init__(self):
+        """Load configuration after dataclass initialization"""
+        try:
+            from ..config import get_memory_backup_config
+            config = get_memory_backup_config()
+            
+            self.max_memory_mb = config.max_memory_mb
+            self.max_file_size_mb = config.max_file_size_mb
+            self.max_backups = config.max_backups
+            self.backup_timeout_seconds = config.backup_timeout_seconds
+            self.memory_warning_threshold = config.memory_warning_threshold
+        except ImportError:
+            # Fallback to defaults if config not available
+            self.max_memory_mb = 50
+            self.max_file_size_mb = 10
+            self.max_backups = 1000
+            self.backup_timeout_seconds = 300
+            self.memory_warning_threshold = 0.8
     
     def add_backup(self, operation: EditOperation) -> bool:
         """Add backup to memory cache with LRU eviction"""
         with self._lock:
             file_path = operation.file_path
             
+            # Check file size limit
+            required_memory = operation.memory_size / (1024 * 1024)  # Convert to MB
+            if required_memory > self.max_file_size_mb:
+                return False
+
             # Check if we need to evict
             required_memory = operation.memory_size / (1024 * 1024)  # Convert to MB
             if not self._ensure_space(required_memory):
@@ -333,7 +363,7 @@ class MemoryBackupManager:
                len(self.backup_cache) >= self.max_backups):
             
             if not self.access_order:
-                break  # Nothing to evict
+                return False  # Nothing to evict but still not enough space
             
             # Remove least recently used
             lru_path = self.access_order[0]
@@ -399,6 +429,86 @@ class MemoryBackupManager:
                 }
                 for file_path, op in self.backup_cache.items()
             ]
+    
+    def replace_disk_backup(self, file_path: Union[str, Path], 
+                           disk_backup_path: Optional[Union[str, Path]] = None) -> bool:
+        """
+        Replace disk backup with memory backup
+        
+        This method finds an existing disk backup and replaces it with a memory backup.
+        If disk_backup_path is not provided, it will search for common backup file patterns.
+        
+        Args:
+            file_path: Path to the original file
+            disk_backup_path: Optional path to the disk backup file
+            
+        Returns:
+            True if replacement successful, False otherwise
+        """
+        file_path = Path(file_path)
+        
+        with self._lock:
+            try:
+                # Read current file content for backup
+                if not file_path.exists():
+                    return False
+                
+                original_content = file_path.read_text(encoding='utf-8')
+                
+                # If we already have a memory backup, just clean up disk backup
+                file_path_str = str(file_path.absolute())
+                if file_path_str in self.backup_cache:
+                    # Remove disk backup if specified
+                    if disk_backup_path:
+                        backup_path = Path(disk_backup_path)
+                        if backup_path.exists():
+                            backup_path.unlink()
+                    else:
+                        # Search for and remove common backup files
+                        self._cleanup_disk_backups(file_path)
+                    
+                    return True
+                
+                # Create memory backup operation
+                operation = EditOperation(
+                    file_path=file_path_str,
+                    original_content=original_content
+                )
+                
+                # Add to memory cache
+                if self.add_backup(operation):
+                    # Remove disk backup if specified
+                    if disk_backup_path:
+                        backup_path = Path(disk_backup_path)
+                        if backup_path.exists():
+                            backup_path.unlink()
+                    else:
+                        # Search for and remove common backup files
+                        self._cleanup_disk_backups(file_path)
+                    
+                    return True
+                
+                return False
+                
+            except Exception:
+                return False
+    
+    def _cleanup_disk_backups(self, file_path: Path) -> None:
+        """Clean up common disk backup files for the given file"""
+        backup_patterns = [
+            file_path.with_suffix(file_path.suffix + '.bak'),
+            file_path.with_suffix(file_path.suffix + '.backup'),
+            file_path.parent / (file_path.name + '~'),
+            file_path.with_name(f".{file_path.name}.swp"),
+            file_path.parent / ".edit_backup" / file_path.name
+        ]
+        
+        for backup_path in backup_patterns:
+            try:
+                if backup_path.exists():
+                    backup_path.unlink()
+            except Exception:
+                pass  # Ignore cleanup errors
 
 # Global backup manager instance
 _global_backup_manager: Optional[MemoryBackupManager] = None

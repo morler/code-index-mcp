@@ -1,7 +1,7 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: 取消apply_edit备份功能
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+**Branch**: `002-apply-edit` | **Date**: 2025-01-09 | **Spec**: spec.md
+**Input**: Feature specification from `/specs/002-apply-edit/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
@@ -10,12 +10,6 @@
 取消apply_edit工具的磁盘备份功能，改用内存备份机制实现错误回滚。通过移除文件系统I/O操作，提升20%的编辑性能并减少50%的磁盘空间使用。保持API兼容性的同时，实现LRU内存管理和文件锁定机制确保数据安全。
 
 ## Technical Context
-
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
 
 **Language/Version**: Python 3.11  
 **Primary Dependencies**: tree-sitter, SCIP protocol, xxhash  
@@ -47,7 +41,7 @@
 - Database/ORM usage beyond direct file access
 
 ### Performance Requirements:
-- ✅ Sub-100ms file operations (target: 120ms vs current 150ms)
+- ✅ Sub-100ms file operations (target: <100ms vs current 150ms, 33%+ improvement)
 - ✅ <1 second incremental updates for <100 changed files
 - ✅ Zero-copy data access patterns maintained
 
@@ -66,12 +60,6 @@ specs/[###-feature]/
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```
 src/
@@ -79,13 +67,32 @@ src/
 │   ├── core/
 │   │   ├── edit.py              # Modified: remove backup file operations
 │   │   ├── backup.py            # Modified: memory-based backup manager
-│   │   └── operations.py        # Modified: simplified edit workflow
-│   └── server_unified.py        # Unchanged: maintains unified interface
+│   │   ├── operations.py        # Modified: simplified edit workflow
+│   │   ├── memory_backup.py     # New: LRU memory backup manager
+│   │   ├── file_state.py        # New: 文件状态跟踪器 for rollback
+│   │   ├── edit_operation.py    # New: edit operation data structure
+│   │   ├── file_lock.py         # New: file locking mechanism
+│   │   ├── memory_monitor.py    # New: memory usage monitoring
+│   │   └── edit_logger.py       # New: edit operation logging
+│   ├── server_unified.py        # Modified: use memory backup
+│   └── mcp_tools.py             # Modified: tool_apply_edit function
 
 tests/
 ├── test_edit_operations.py      # Updated: memory backup tests
 ├── test_performance.py          # Updated: benchmark memory vs disk backup
-└── test_integration.py          # Updated: error handling tests
+├── test_integration.py          # Updated: error handling tests
+├── contract/
+│   ├── test_edit_api.py         # New: API contract tests
+│   └── test_edit_rollback.py    # New: rollback contract tests
+├── integration/
+│   ├── test_edit_no_backup.py   # New: no-backup integration tests
+│   ├── test_memory_rollback.py  # New: memory rollback tests
+│   └── test_concurrent_rollback.py # New: concurrent rollback tests
+├── performance/
+│   └── test_edit_performance.py # New: performance comparison tests
+└── unit/
+    ├── test_memory_backup.py    # New: memory backup unit tests
+    └── test_file_lock.py        # New: file locking unit tests
 ```
 
 **Structure Decision**: Single project structure with modifications to core edit and backup modules only. No new directories or major restructuring required.
