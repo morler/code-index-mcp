@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Union
+from typing import Optional, Dict, List, Any, Union, Tuple
 
 class EditStatus(Enum):
     """Edit operation status"""
@@ -99,10 +99,142 @@ class FileState:
         except Exception as e:
             raise EditOperationError(f"Failed to read file state: {e}")
     
-    def is_valid(self, current_content: str) -> bool:
-        """Check if current content matches this state"""
-        current_checksum = hashlib.md5(current_content.encode(self.encoding)).hexdigest()
-        return current_checksum == self.checksum
+    def validate_rollback_safety(self, current_state: 'FileState') -> Tuple[bool, Optional[str]]:
+        """
+        Validate if rollback is safe given current file state
+        
+        Args:
+            current_state: Current file state to validate against
+            
+        Returns:
+            (is_safe, reason) - Whether rollback is safe and reason if not
+        """
+        # Check if file path matches
+        if self.path != current_state.path:
+            return False, f"File path mismatch: {self.path} != {current_state.path}"
+        
+        # Check if file has been modified by another process
+        # (significant size change might indicate external modification)
+        size_diff = abs(self.size - current_state.size)
+        if size_diff > max(self.size, current_state.size) * 0.1:  # 10% threshold
+            return False, f"File size changed significantly: {self.size} -> {current_state.size}"
+        
+        # Check if file is locked by another process
+        if current_state.is_locked and current_state.lock_owner != self.lock_owner:
+            return False, f"File is locked by another process: {current_state.lock_owner}"
+        
+        return True, None
+    
+    def has_externally_modified(self, current_state: 'FileState', time_threshold_seconds: float = 1.0) -> bool:
+        """
+        Check if file has been modified by external process
+        
+        Args:
+            current_state: Current file state
+            time_threshold_seconds: Time threshold for considering modification as external
+            
+        Returns:
+            True if file was likely modified externally
+        """
+        # Check if checksum differs (content changed)
+        if self.checksum != current_state.checksum:
+            return True
+        
+        # Check if modification time is significantly newer
+        time_diff = (current_state.modified_time - self.modified_time).total_seconds()
+        if time_diff > time_threshold_seconds:
+            return True
+        
+        return False
+    
+    def can_safely_rollback(self, current_content: str, current_state: Optional['FileState'] = None) -> Tuple[bool, Optional[str]]:
+        """
+        Comprehensive check if rollback is safe
+        
+        Args:
+            current_content: Current file content
+            current_state: Current file state (optional, will be calculated if not provided)
+            
+        Returns:
+            (can_rollback, reason) - Whether rollback is safe and reason if not
+        """
+        # If current state not provided, create it from content
+        if current_state is None:
+            try:
+                current_checksum = hashlib.md5(current_content.encode(self.encoding)).hexdigest()
+                current_size = len(current_content.encode(self.encoding))
+                
+                current_state = FileState(
+                    path=self.path,
+                    checksum=current_checksum,
+                    size=current_size,
+                    modified_time=datetime.now(),
+                    encoding=self.encoding
+                )
+            except Exception as e:
+                return False, f"Failed to analyze current state: {e}"
+        
+        # Validate rollback safety
+        is_safe, reason = self.validate_rollback_safety(current_state)
+        if not is_safe:
+            return False, reason
+        
+        # Check for external modifications
+        if self.has_externally_modified(current_state):
+            return False, "File has been modified by external process"
+        
+        return True, None
+    
+    def get_rollback_risk_assessment(self, current_state: 'FileState') -> Dict[str, Any]:
+        """
+        Get detailed risk assessment for rollback operation
+        
+        Args:
+            current_state: Current file state to assess against
+            
+        Returns:
+            Dictionary with risk assessment details
+        """
+        risks = []
+        risk_level = "low"
+        
+        # Check content changes
+        if self.checksum != current_state.checksum:
+            risks.append("Content has been modified")
+            risk_level = "medium"
+        
+        # Check size changes
+        size_diff = abs(self.size - current_state.size)
+        size_change_percent = (size_diff / max(self.size, current_state.size)) * 100 if max(self.size, current_state.size) > 0 else 0
+        if size_change_percent > 50:
+            risks.append(f"Large size change: {size_change_percent:.1f}%")
+            risk_level = "high"
+        elif size_change_percent > 10:
+            risks.append(f"Moderate size change: {size_change_percent:.1f}%")
+            if risk_level == "low":
+                risk_level = "medium"
+        
+        # Check time changes
+        time_diff = (current_state.modified_time - self.modified_time).total_seconds()
+        if time_diff > 300:  # 5 minutes
+            risks.append(f"File modified long ago: {time_diff:.0f} seconds")
+            risk_level = "medium"
+        
+        # Check locks
+        if current_state.is_locked and current_state.lock_owner != self.lock_owner:
+            risks.append(f"File locked by another process: {current_state.lock_owner}")
+            risk_level = "high"
+        
+        return {
+            'risk_level': risk_level,
+            'risks': risks,
+            'size_change_percent': size_change_percent,
+            'time_diff_seconds': time_diff,
+            'content_changed': self.checksum != current_state.checksum,
+            'is_locked': current_state.is_locked,
+            'can_rollback': len(risks) == 0
+        }
+
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -510,6 +642,134 @@ class MemoryBackupManager:
             except Exception:
                 pass  # Ignore cleanup errors
 
+    def rollback_file(self, file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+        """
+        Rollback file to its original content using memory backup
+        
+        This method restores a file to its original state using the stored backup.
+        It includes validation and error handling to ensure safe rollback operations.
+        
+        Args:
+            file_path: Path to the file to rollback
+            
+        Returns:
+            (success, error_message) - Success status and error message if failed
+        """
+        file_path = Path(file_path)
+        file_path_str = str(file_path.absolute())
+        
+        with self._lock:
+            try:
+                # Check if backup exists
+                if file_path_str not in self.backup_cache:
+                    return False, f"No backup found for {file_path_str}"
+                
+                operation = self.backup_cache[file_path_str]
+                
+                # Validate backup has original content
+                if not operation.original_content:
+                    return False, f"Backup for {file_path_str} has no original content"
+                
+                # Check if file still exists
+                if not file_path.exists():
+                    return False, f"File {file_path_str} no longer exists"
+                
+                # Read current content for validation
+                try:
+                    current_content = file_path.read_text(encoding='utf-8')
+                except Exception as e:
+                    return False, f"Failed to read current file content: {e}"
+                
+                # Perform rollback
+                try:
+                    file_path.write_text(operation.original_content, encoding='utf-8')
+                except Exception as e:
+                    return False, f"Failed to write original content: {e}"
+                
+                # Update operation status
+                operation.set_status(EditStatus.ROLLED_BACK)
+                
+                # Update access order (move to end since we just used it)
+                if file_path_str in self.access_order:
+                    self.access_order.remove(file_path_str)
+                self.access_order.append(file_path_str)
+                
+                return True, None
+                
+            except Exception as e:
+                return False, f"Rollback failed: {e}"
+    
+    def validate_rollback_possible(self, file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+        """
+        Validate if rollback is possible for the given file
+        
+        Args:
+            file_path: Path to the file to validate
+            
+        Returns:
+            (is_possible, reason) - Whether rollback is possible and reason if not
+        """
+        file_path = Path(file_path)
+        file_path_str = str(file_path.absolute())
+        
+        with self._lock:
+            # Check if backup exists
+            if file_path_str not in self.backup_cache:
+                return False, f"No backup found for {file_path_str}"
+            
+            operation = self.backup_cache[file_path_str]
+            
+            # Validate backup has original content
+            if not operation.original_content:
+                return False, f"Backup for {file_path_str} has no original content"
+            
+            # Check if file still exists
+            if not file_path.exists():
+                return False, f"File {file_path_str} no longer exists"
+            
+            # Check if operation is in a state that allows rollback
+            if operation.status == EditStatus.ROLLED_BACK:
+                return False, f"File {file_path_str} has already been rolled back"
+            
+            return True, None
+    
+    def get_rollback_preview(self, file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+        """
+        Get preview of what rollback would do without actually performing it
+        
+        Args:
+            file_path: Path to the file to preview rollback for
+            
+        Returns:
+            Dictionary with rollback preview info, or None if no backup exists
+        """
+        file_path = Path(file_path)
+        file_path_str = str(file_path.absolute())
+        
+        with self._lock:
+            if file_path_str not in self.backup_cache:
+                return None
+            
+            operation = self.backup_cache[file_path_str]
+            
+            # Read current content
+            try:
+                current_content = file_path.read_text(encoding='utf-8') if file_path.exists() else ""
+            except Exception:
+                current_content = "<unreadable>"
+            
+            return {
+                'file_path': file_path_str,
+                'operation_id': operation.operation_id,
+                'current_status': operation.status.value,
+                'original_content_length': len(operation.original_content or ""),
+                'current_content_length': len(current_content),
+                'content_differs': current_content != (operation.original_content or ""),
+                'backup_age_seconds': operation.get_duration_seconds(),
+                'can_rollback': operation.original_content is not None and operation.status != EditStatus.ROLLED_BACK
+            }
+
+
 # Global backup manager instance
 _global_backup_manager: Optional[MemoryBackupManager] = None
 
@@ -545,6 +805,22 @@ def remove_file_backup(file_path: str) -> bool:
     """Remove file backup from global manager"""
     manager = get_backup_manager()
     return manager.remove_backup(file_path)
+
+
+def rollback_file(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+    """Rollback file using global backup manager"""
+    manager = get_backup_manager()
+    return manager.rollback_file(file_path)
+
+def validate_rollback_possible(file_path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+    """Validate if rollback is possible using global backup manager"""
+    manager = get_backup_manager()
+    return manager.validate_rollback_possible(file_path)
+
+def get_rollback_preview(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+    """Get rollback preview using global backup manager"""
+    manager = get_backup_manager()
+    return manager.get_rollback_preview(file_path)
 
 def get_memory_status() -> Dict[str, float]:
     """Get memory status from global manager"""

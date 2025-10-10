@@ -288,15 +288,44 @@ class BackupSystem:
                 return True, None
                 
             except Exception as e:
-                # Rollback on failure
+                # Enhanced rollback on failure
+                rollback_success = False
+                rollback_error = None
+                
                 try:
                     if operation.original_content:
+                        # Validate rollback safety before proceeding
+                        current_content = file_path.read_text(encoding='utf-8')
+                        current_state = FileState.from_file(file_path)
+                        
+                        # Use FileState rollback validation if available
+                        if operation.file_state:
+                            can_rollback, reason = operation.file_state.can_safely_rollback(
+                                current_content, current_state
+                            )
+                            if not can_rollback:
+                                operation.set_status(EditStatus.FAILED, 
+                                    f"Rollback unsafe: {reason}")
+                                return False, f"Edit failed and rollback unsafe: {reason}"
+                        
+                        # Perform rollback
                         file_path.write_text(operation.original_content, encoding='utf-8')
                         operation.set_status(EditStatus.ROLLED_BACK)
-                except Exception:
-                    operation.set_status(EditStatus.FAILED, f"Rollback failed: {e}")
+                        rollback_success = True
+                        
+                except Exception as rollback_exc:
+                    rollback_error = str(rollback_exc)
+                    operation.set_status(EditStatus.FAILED, f"Rollback failed: {rollback_error}")
                 
-                return False, f"Edit failed: {e}"
+                # Construct error message
+                if rollback_success:
+                    error_msg = f"Edit failed but rollback succeeded: {e}"
+                elif rollback_error:
+                    error_msg = f"Edit failed and rollback failed: {e}. Rollback error: {rollback_error}"
+                else:
+                    error_msg = f"Edit failed: {e}"
+                
+                return False, error_msg
             finally:
                 release_file_lock(file_path)
     
@@ -358,6 +387,252 @@ class BackupSystem:
             
             # Clear manager
             self.memory_manager.clear_all()
+    
+    def crash_recovery(self) -> Dict[str, Any]:
+        """
+        Perform crash recovery analysis and cleanup
+        
+        This method analyzes the current state of backups and identifies any
+        operations that may have been interrupted by a crash or system failure.
+        
+        Returns:
+            Dictionary with recovery analysis and actions taken
+        """
+        recovery_report = {
+            'analyzed_backups': 0,
+            'incomplete_operations': 0,
+            'recovered_operations': 0,
+            'failed_recoveries': 0,
+            'cleaned_backups': 0,
+            'actions': [],
+            'recommendations': []
+        }
+        
+        with self._lock:
+            try:
+                # Analyze all backup operations
+                incomplete_operations = []
+                
+                for file_path, operation in self.memory_manager.backup_cache.items():
+                    recovery_report['analyzed_backups'] += 1
+                    
+                    # Check for incomplete operations
+                    if operation.status in [EditStatus.IN_PROGRESS, EditStatus.CREATED]:
+                        incomplete_operations.append((file_path, operation))
+                        recovery_report['incomplete_operations'] += 1
+                    
+                    # Check for very old operations that might be stale
+                    elif operation.get_duration_seconds() > 3600:  # 1 hour
+                        recovery_report['actions'].append(
+                            f"Found stale operation for {file_path} (age: {operation.get_duration_seconds():.0f}s)"
+                        )
+                
+                # Attempt recovery for incomplete operations
+                for file_path, operation in incomplete_operations:
+                    try:
+                        # Check if file still exists
+                        file_obj = Path(file_path)
+                        if not file_obj.exists():
+                            # File no longer exists, clean up backup
+                            self.memory_manager.remove_backup(file_path)
+                            recovery_report['cleaned_backups'] += 1
+                            recovery_report['actions'].append(
+                                f"Cleaned up backup for missing file: {file_path}"
+                            )
+                            recovery_report['recovered_operations'] += 1
+                            continue
+                        
+                        # Check current file state vs backup
+                        try:
+                            current_content = file_obj.read_text(encoding='utf-8')
+                            current_state = FileState.from_file(file_obj)
+                            
+                            # If we have original file state, compare
+                            if operation.file_state:
+                                if operation.file_state.checksum == current_state.checksum:
+                                    # File hasn't changed since backup, operation likely completed
+                                    operation.set_status(EditStatus.COMPLETED)
+                                    recovery_report['recovered_operations'] += 1
+                                    recovery_report['actions'].append(
+                                        f"Marked operation as completed for {file_path} (no changes detected)"
+                                    )
+                                else:
+                                    # File has changed, need investigation
+                                    recovery_report['recommendations'].append(
+                                        f"File {file_path} has changed since backup - manual review needed"
+                                    )
+                                    operation.set_status(EditStatus.FAILED, 
+                                        "Crash recovery: file state mismatch")
+                            else:
+                                # No file state to compare, assume incomplete
+                                operation.set_status(EditStatus.FAILED, 
+                                    "Crash recovery: incomplete operation")
+                                recovery_report['actions'].append(
+                                    f"Marked operation as failed for {file_path} (incomplete)"
+                                )
+                        
+                        except Exception as e:
+                            # Error analyzing file, mark as failed
+                            operation.set_status(EditStatus.FAILED, 
+                                f"Crash recovery error: {e}")
+                            recovery_report['failed_recoveries'] += 1
+                            recovery_report['actions'].append(
+                                f"Failed to analyze {file_path}: {e}"
+                            )
+                    
+                    except Exception as e:
+                        recovery_report['failed_recoveries'] += 1
+                        recovery_report['actions'].append(
+                            f"Recovery failed for {file_path}: {e}"
+                        )
+                
+                # Clean up expired operations
+                expired_count = self.memory_manager.cleanup_expired(max_age_seconds=7200)  # 2 hours
+                if expired_count > 0:
+                    recovery_report['cleaned_backups'] += expired_count
+                    recovery_report['actions'].append(
+                        f"Cleaned up {expired_count} expired backup operations"
+                    )
+                
+                # Add recommendations based on analysis
+                if recovery_report['incomplete_operations'] > 0:
+                    recovery_report['recommendations'].append(
+                        f"Found {recovery_report['incomplete_operations']} incomplete operations - review recommended"
+                    )
+                
+                if recovery_report['failed_recoveries'] > 0:
+                    recovery_report['recommendations'].append(
+                        f"{recovery_report['failed_recoveries']} operations failed recovery - manual intervention may be needed"
+                    )
+                
+                # Memory usage check
+                memory_status = self.memory_manager.get_memory_usage()
+                if memory_status['usage_percent'] > 80:
+                    recovery_report['recommendations'].append(
+                        f"High memory usage ({memory_status['usage_percent']:.1f}%) - consider cleanup"
+                    )
+                
+                recovery_report['actions'].append("Crash recovery analysis completed")
+                
+            except Exception as e:
+                recovery_report['actions'].append(f"Crash recovery failed: {e}")
+                recovery_report['recommendations'].append("System may be in inconsistent state - full restart recommended")
+        
+        return recovery_report
+    
+    def emergency_rollback_all(self, confirm: bool = False) -> Dict[str, Any]:
+        """
+        Emergency rollback of all in-progress operations
+        
+        This is a last resort measure to restore system consistency.
+        Requires explicit confirmation to prevent accidental data loss.
+        
+        Args:
+            confirm: Must be True to proceed with emergency rollback
+            
+        Returns:
+            Dictionary with rollback results and statistics
+        """
+        if not confirm:
+            return {
+                'success': False,
+                'error': 'Emergency rollback requires explicit confirmation',
+                'rolled_back': 0,
+                'failed': 0,
+                'actions': []
+            }
+        
+        rollback_report = {
+            'success': True,
+            'rolled_back': 0,
+            'failed': 0,
+            'actions': [],
+            'warnings': []
+        }
+        
+        with self._lock:
+            try:
+                # Find all operations that need rollback
+                operations_to_rollback = []
+                
+                for file_path, operation in self.memory_manager.backup_cache.items():
+                    # Rollback in-progress, failed, or created operations
+                    if operation.status in [EditStatus.IN_PROGRESS, EditStatus.FAILED, EditStatus.CREATED]:
+                        if operation.original_content:
+                            operations_to_rollback.append((file_path, operation))
+                
+                rollback_report['actions'].append(
+                    f"Found {len(operations_to_rollback)} operations requiring emergency rollback"
+                )
+                
+                # Perform rollbacks
+                for file_path, operation in operations_to_rollback:
+                    try:
+                        file_obj = Path(file_path)
+                        
+                        # Check if file exists
+                        if not file_obj.exists():
+                            rollback_report['actions'].append(
+                                f"Skipping rollback for missing file: {file_path}"
+                            )
+                            continue
+                        
+                        # Validate rollback safety if possible
+                        if operation.file_state:
+                            try:
+                                current_content = file_obj.read_text(encoding='utf-8')
+                                current_state = FileState.from_file(file_obj)
+                                can_rollback, reason = operation.file_state.can_safely_rollback(
+                                    current_content, current_state
+                                )
+                                if not can_rollback:
+                                    rollback_report['warnings'].append(
+                                        f"Unsafe rollback for {file_path}: {reason}"
+                                    )
+                                    continue
+                            except Exception:
+                                # If validation fails, proceed with caution
+                                rollback_report['warnings'].append(
+                                    f"Could not validate rollback safety for {file_path}"
+                                )
+                        
+                        # Perform rollback
+                        file_obj.write_text(operation.original_content, encoding='utf-8')
+                        operation.set_status(EditStatus.ROLLED_BACK)
+                        rollback_report['rolled_back'] += 1
+                        rollback_report['actions'].append(
+                            f"Successfully rolled back: {file_path}"
+                        )
+                        
+                    except Exception as e:
+                        rollback_report['failed'] += 1
+                        rollback_report['actions'].append(
+                            f"Failed to rollback {file_path}: {e}"
+                        )
+                
+                # Clean up memory after emergency rollback
+                for file_path, operation in operations_to_rollback:
+                    if operation.status == EditStatus.ROLLED_BACK:
+                        memory_freed = operation.memory_size / (1024 * 1024)
+                        self.memory_monitor.release_operation(memory_freed)
+                        self.memory_manager.remove_backup(file_path)
+                
+                if rollback_report['rolled_back'] > 0:
+                    rollback_report['actions'].append(
+                        f"Emergency rollback completed: {rollback_report['rolled_back']} files restored"
+                    )
+                
+                if rollback_report['warnings']:
+                    rollback_report['actions'].append(
+                        f"Generated {len(rollback_report['warnings'])} warnings during rollback"
+                    )
+                
+            except Exception as e:
+                rollback_report['success'] = False
+                rollback_report['error'] = str(e)
+                rollback_report['actions'].append(f"Emergency rollback failed: {e}")
+        
+        return rollback_report
 
 # Global backup system instance
 _global_backup_system: Optional[BackupSystem] = None
@@ -395,3 +670,13 @@ def get_backup_status() -> Dict[str, Any]:
     """Get backup system status"""
     system = get_backup_system()
     return system.get_system_status()
+
+def crash_recovery() -> Dict[str, Any]:
+    """Perform crash recovery analysis using global backup system"""
+    system = get_backup_system()
+    return system.crash_recovery()
+
+def emergency_rollback_all(confirm: bool = False) -> Dict[str, Any]:
+    """Emergency rollback of all in-progress operations using global backup system"""
+    system = get_backup_system()
+    return system.emergency_rollback_all(confirm)

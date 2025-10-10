@@ -108,17 +108,46 @@ class MemoryEditOperations:
             else:
                 validated_new_content = new_content
             
-            # Apply edit with memory backup
+            # Apply edit with memory backup (includes enhanced rollback)
             success, error = apply_edit_with_backup(
                 file_path, 
                 validated_new_content, 
                 old_content if old_content and old_content.strip() else None
             )
             
+            # Enhanced error handling with rollback information
+            if not success and error:
+                # Check if error contains rollback information
+                if "rollback succeeded" in error.lower():
+                    # Edit failed but rollback was successful
+                    return False, f"Edit failed but file was safely restored: {error}"
+                elif "rollback failed" in error.lower():
+                    # Both edit and rollback failed - critical error
+                    return False, f"CRITICAL: Edit failed and rollback failed: {error}"
+                elif "rollback unsafe" in error.lower():
+                    # Rollback was prevented for safety reasons
+                    return False, f"Edit failed and rollback unsafe: {error}"
+                else:
+                    # Standard edit failure
+                    return False, f"Edit operation failed: {error}"
+            
             return success, error
             
         except Exception as e:
-            return False, f"Edit operation failed: {e}"
+            # Enhanced exception handling with rollback attempt
+            try:
+                # Try to use global rollback mechanism as last resort
+                from .edit_models import rollback_file
+                rollback_success, rollback_error = rollback_file(file_path)
+                if rollback_success:
+                    return False, f"Edit operation failed but emergency rollback succeeded: {e}"
+                else:
+                    return False, f"CRITICAL: Edit operation failed and emergency rollback failed: {e}. Rollback error: {rollback_error}"
+            except ImportError:
+                # Fallback if rollback module not available
+                return False, f"Edit operation failed: {e}"
+            except Exception as rollback_exc:
+                return False, f"CRITICAL: Edit operation failed and emergency rollback failed: {e}. Emergency rollback error: {rollback_exc}"
     
     def edit_files_atomic(self, 
                          edits: List[Tuple[str, str, str]]) -> Tuple[bool, Optional[str]]:
@@ -144,29 +173,69 @@ class MemoryEditOperations:
         
         # Apply edits sequentially with memory backup
         successful_edits = []
+        failed_edits = []
         try:
             for file_path, old_content, new_content in edits:
                 success, error = self.edit_file_atomic(file_path, old_content, new_content)
                 if not success:
-                    # Rollback successful edits
+                    failed_edits.append((file_path, error))
+                    # Enhanced rollback for successful edits
+                    rollback_errors = []
                     for edited_file in successful_edits:
                         try:
-                            self.backup_system.restore_file(edited_file)
-                        except Exception:
-                            pass  # Best effort rollback
-                    return False, f"Edit failed for {file_path}: {error}"
+                            # Use enhanced rollback mechanism
+                            from .edit_models import rollback_file
+                            rollback_success, rollback_error = rollback_file(edited_file)
+                            if not rollback_success:
+                                rollback_errors.append(f"{edited_file}: {rollback_error}")
+                        except ImportError:
+                            # Fallback to backup system restore
+                            try:
+                                self.backup_system.restore_file(edited_file)
+                            except Exception:
+                                rollback_errors.append(f"{edited_file}: fallback rollback failed")
+                        except Exception as rollback_exc:
+                            rollback_errors.append(f"{edited_file}: {rollback_exc}")
+                    
+                    # Construct detailed error message
+                    error_msg = f"Edit failed for {file_path}: {error}"
+                    if rollback_errors:
+                        error_msg += f". Rollback errors: {'; '.join(rollback_errors)}"
+                    else:
+                        error_msg += ". All successful edits were rolled back."
+                    
+                    return False, error_msg
                 successful_edits.append(file_path)
             
             return True, None
             
         except Exception as e:
-            # Rollback on any exception
+            # Enhanced rollback on batch exception
+            rollback_errors = []
             for edited_file in successful_edits:
                 try:
-                    self.backup_system.restore_file(edited_file)
-                except Exception:
-                    pass
-            return False, f"Batch edit failed: {e}"
+                    # Use enhanced rollback mechanism
+                    from .edit_models import rollback_file
+                    rollback_success, rollback_error = rollback_file(edited_file)
+                    if not rollback_success:
+                        rollback_errors.append(f"{edited_file}: {rollback_error}")
+                except ImportError:
+                    # Fallback to backup system restore
+                    try:
+                        self.backup_system.restore_file(edited_file)
+                    except Exception:
+                        rollback_errors.append(f"{edited_file}: fallback rollback failed")
+                except Exception as rollback_exc:
+                    rollback_errors.append(f"{edited_file}: {rollback_exc}")
+            
+            # Construct detailed error message
+            error_msg = f"Batch edit failed: {e}"
+            if rollback_errors:
+                error_msg += f". Rollback errors: {'; '.join(rollback_errors)}"
+            elif successful_edits:
+                error_msg += ". All successful edits were rolled back."
+            
+            return False, error_msg
     
     def get_backup_status(self) -> Dict[str, Any]:
         """Get current backup system status"""
