@@ -27,7 +27,9 @@ class MemoryBackupConfig:
         self.max_file_size_mb = self._get_int_env(
             "CODE_INDEX_MAX_FILE_SIZE_MB", self.DEFAULT_MAX_FILE_SIZE_MB
         )
-        self.max_backups = self._get_int_env("CODE_INDEX_MAX_BACKUPS", self.DEFAULT_MAX_BACKUPS)
+        self.max_backups = self._get_int_env(
+            "CODE_INDEX_MAX_BACKUPS", self.DEFAULT_MAX_BACKUPS
+        )
         self.backup_timeout_seconds = self._get_int_env(
             "CODE_INDEX_BACKUP_TIMEOUT_SECONDS", self.DEFAULT_BACKUP_TIMEOUT_SECONDS
         )

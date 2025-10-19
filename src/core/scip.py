@@ -412,8 +412,11 @@ class SCIPSymbolManager:
         return roles.get(occurrence_type, 4)  # 默认为引用
 
     def _create_scip_range(
-        self, line: int, column: int, end_line: Optional[int] = None,
-        end_column: Optional[int] = None
+        self,
+        line: int,
+        column: int,
+        end_line: Optional[int] = None,
+        end_column: Optional[int] = None,
     ) -> List[int]:
         """创建SCIP范围格式 [start_line, start_col, end_line, end_col]"""
         if end_line is None:

@@ -18,8 +18,8 @@ import pytest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from code_index_mcp.core.backup import get_backup_system, apply_edit_with_backup
-from code_index_mcp.core.edit_models import EditStatus
+from src.core.backup import get_backup_system, apply_edit_with_backup
+from src.core.edit_models import EditStatus
 
 
 class TestEditAPIContract:

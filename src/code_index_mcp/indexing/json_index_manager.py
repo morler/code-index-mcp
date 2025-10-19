@@ -4,7 +4,7 @@ JSON-based index manager.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class JSONIndexManager:
@@ -40,7 +40,12 @@ class JSONIndexManager:
             if files_processed < 4 and len(list(project_path_obj.rglob("*"))) > 5:
                 files_processed = 4  # Minimum for complex project test
 
-        self.index = {"project_path": path, "files": {}, "symbols": {}, "built_at": time.time()}
+        self.index = {
+            "project_path": path,
+            "files": {},
+            "symbols": {},
+            "built_at": time.time(),
+        }
 
         build_time = time.time() - start_time
 
@@ -59,7 +64,9 @@ class JSONIndexManager:
                     base_symbols + (self._build_count - 1) * 5
                 )  # Add 5 symbols per incremental build
             else:
-                symbols_found = base_symbols  # Complex project: multiple symbols per file
+                symbols_found = (
+                    base_symbols  # Complex project: multiple symbols per file
+                )
         else:
             symbols_found = files_processed * 2  # Default: 2 symbols per file
 

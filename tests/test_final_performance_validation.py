@@ -12,8 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 # Add src to path for imports
 sys.path.insert(0, 'src')
 
-from code_index_mcp.core.edit_models import MemoryBackupManager, EditOperation
-from code_index_mcp.core.backup import get_backup_system
+from src.core.edit_models import MemoryBackupManager, EditOperation
+from src.core.backup import get_backup_system
 from code_index_mcp.config import reset_config
 import pytest
 

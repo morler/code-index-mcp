@@ -26,12 +26,12 @@ def test_memory_backup_integration():
     
     try:
         # Import the modules
-        from code_index_mcp.core.edit_models import (
+        from src.core.edit_models import (
             EditOperation, FileState, MemoryBackupManager, EditStatus
         )
-        from code_index_mcp.core.backup import get_backup_system, apply_edit_with_backup
-        from code_index_mcp.core.memory_monitor import get_memory_monitor, MemoryThreshold
-        from code_index_mcp.core.file_lock import acquire_file_lock, release_file_lock
+        from src.core.backup import get_backup_system, apply_edit_with_backup
+        from src.core.memory_monitor import get_memory_monitor, MemoryThreshold
+        from src.core.file_lock import acquire_file_lock, release_file_lock
         
         print("✅ All modules imported successfully")
         

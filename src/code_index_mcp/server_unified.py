@@ -87,13 +87,20 @@ if FastMCP is not None:
     @mcp.tool()
     def add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
         """添加导入语句 - 智能插入位置"""
-        return execute_tool("add_import", file_path=file_path, import_statement=import_statement)
+        return execute_tool(
+            "add_import", file_path=file_path, import_statement=import_statement
+        )
 
     @mcp.tool()
-    def apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
+    def apply_edit(
+        file_path: str, old_content: str, new_content: str
+    ) -> Dict[str, Any]:
         """应用编辑操作 - 原子操作和备份"""
         return execute_tool(
-            "apply_edit", file_path=file_path, old_content=old_content, new_content=new_content
+            "apply_edit",
+            file_path=file_path,
+            old_content=old_content,
+            new_content=new_content,
         )
 
     def main():
@@ -136,7 +143,9 @@ else:
     def add_import(file_path: str, import_statement: str) -> Dict[str, Any]:
         return {"success": False, "error": "MCP not available"}
 
-    def apply_edit(file_path: str, old_content: str, new_content: str) -> Dict[str, Any]:
+    def apply_edit(
+        file_path: str, old_content: str, new_content: str
+    ) -> Dict[str, Any]:
         return {"success": False, "error": "MCP not available"}
 
     def main():
