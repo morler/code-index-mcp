@@ -13,7 +13,7 @@ from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional
 
 from .cache import get_file_cache
-from .index import CodeIndex, SearchQuery, SearchResult
+from .index import CodeIndex, SearchQuery, SearchResult, SymbolInfo
 
 
 @lru_cache(maxsize=500)
@@ -130,17 +130,13 @@ class OptimizedSearchEngine:
                 symbol_name.lower() if not query.case_sensitive else symbol_name
             )
             if pattern in search_name:
-                # Handle both dict and SymbolInfo objects
-                symbol_type = symbol_info.get('type') if isinstance(symbol_info, dict) else getattr(symbol_info, 'type', 'unknown')
-                symbol_file = symbol_info.get('file') if isinstance(symbol_info, dict) else getattr(symbol_info, 'file', 'unknown')
-                symbol_line = symbol_info.get('line') if isinstance(symbol_info, dict) else getattr(symbol_info, 'line', 0)
-
+                # Direct access to SymbolInfo object attributes
                 matches.append(
                     {
                         "symbol": symbol_name,
-                        "type": symbol_type,
-                        "file": symbol_file,
-                        "line": symbol_line,
+                        "type": symbol_info.type,
+                        "file": symbol_info.file,
+                        "line": symbol_info.line,
                     }
                 )
         return matches

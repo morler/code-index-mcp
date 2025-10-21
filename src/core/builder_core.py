@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 from .builder_decorators import LANGUAGE_MAP, safe_file_operation
 from .builder_languages import get_parser
-from .index import CodeIndex
+from .index import CodeIndex, SymbolInfo
 
 
 class IndexBuilder:
@@ -49,7 +49,7 @@ class IndexBuilder:
     @safe_file_operation
     def _scan_files(self) -> List[str]:
         """简单文件扫描 - Linus原则: 直接迭代"""
-        files = []
+        files: List[str] = []
         base = Path(self.index.base_path)
 
         if not base.exists():
@@ -88,7 +88,7 @@ class IndexBuilder:
                 content = f.read()
 
             tree = ast.parse(content)
-            symbols = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
@@ -113,7 +113,7 @@ class IndexBuilder:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            symbols = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
 
             # 简单的正则匹配
             functions = re.findall(r'fn\s+(\w+)\s*\(', content)
@@ -142,7 +142,7 @@ class IndexBuilder:
                 content = f.read()
 
             tree = parser.parse(content)
-            symbols = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
 
             # 简单的节点遍历
             def walk_tree(node):
@@ -203,8 +203,9 @@ class IndexBuilder:
         for symbol_type, symbol_list in symbols.items():
             for symbol in symbol_list:
                 if symbol:  # 确保非空
-                    self.index.add_symbol(symbol, {
-                        "type": symbol_type.rstrip('s'),  # 去掉复数形式
-                        "file": file_path,
-                        "line": 1  # 简化处理
-                    })
+                    symbol_info = SymbolInfo(
+                        type=symbol_type.rstrip('s'),  # 去掉复数形式
+                        file=file_path,
+                        line=1  # 简化处理
+                    )
+                    self.index.add_symbol(symbol, symbol_info)
