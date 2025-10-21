@@ -259,8 +259,7 @@ class CodeIndex:
         """单文件编辑 - 内存备份，假设已持有锁"""
         try:
             # 使用内存编辑操作
-            from ..code_index_mcp.core.edit_operations import \
-                get_memory_edit_operations
+            from .edit_operations import get_memory_edit_operations
 
             edit_ops = get_memory_edit_operations(self.base_path)
             success, error = edit_ops.edit_file_atomic(

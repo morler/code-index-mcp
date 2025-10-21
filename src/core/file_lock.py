@@ -104,7 +104,7 @@ class FileLock:
         file_path: Union[str, Path],
         lock_type: str = "exclusive",
         timeout_seconds: float = 30.0,
-        retry_interval: float = 0.1,
+        retry_interval: float = 0.01,  # Reduce retry interval from 0.1s to 0.01s
     ):
         self.file_path = Path(file_path)
         self.lock_type = lock_type.lower()
@@ -171,7 +171,9 @@ class FileLock:
 
                 elapsed = time.time() - start_time
                 if elapsed >= timeout:
-                    raise LockTimeoutError(f"Lock acquisition timed out after {timeout:.1f}s")
+                    raise LockTimeoutError(
+                        f"Lock acquisition timed out after {timeout:.1f}s"
+                    )
 
                 # Wait before retry
                 time.sleep(self.retry_interval)
@@ -468,7 +470,10 @@ class LockManager:
         atexit.register(self.cleanup_all_locks)
 
     def acquire_lock(
-        self, file_path: Union[str, Path], lock_type: str = "exclusive", timeout: float = 30.0
+        self,
+        file_path: Union[str, Path],
+        lock_type: str = "exclusive",
+        timeout: float = 30.0,
     ) -> FileLock:
         """Acquire or get existing file lock"""
         with self._lock:
@@ -478,7 +483,11 @@ class LockManager:
             if file_key in self._locks:
                 existing_lock = self._locks[file_key]
                 if existing_lock.is_locked():
+                    # Allow reentrant locks from same thread
                     if existing_lock.lock_type == lock_type or lock_type == "shared":
+                        return existing_lock
+                    elif existing_lock._lock._is_owned():
+                        # Same thread, allow reentrant
                         return existing_lock
                     else:
                         raise LockAcquisitionError(
@@ -619,7 +628,9 @@ def is_file_locked(file_path: Union[str, Path]) -> bool:
 
 # Context manager convenience
 @contextmanager
-def file_lock(file_path: Union[str, Path], lock_type: str = "exclusive", timeout: float = 30.0):
+def file_lock(
+    file_path: Union[str, Path], lock_type: str = "exclusive", timeout: float = 30.0
+):
     """Context manager for file locking"""
     lock = acquire_file_lock(file_path, lock_type, timeout)
     try:

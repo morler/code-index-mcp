@@ -50,22 +50,24 @@ class BackupSystem:
     def __init__(self):
         # Load configuration
         try:
-            from ..config import get_memory_backup_config
+            from ..code_index_mcp.config import get_memory_backup_config
 
             config = get_memory_backup_config()
 
             self.max_memory_mb = config.max_memory_mb
             self.max_file_size_mb = config.max_file_size_mb
-            self.lock_timeout_seconds = config.backup_timeout_seconds
+            self.lock_timeout_seconds = min(
+                config.backup_timeout_seconds, 30.0
+            )  # Cap at 30 seconds
         except ImportError:
             # Fallback to defaults
             self.max_memory_mb = 50
             self.max_file_size_mb = 10
-            self.lock_timeout_seconds = 30
+            self.lock_timeout_seconds = 5
         except Exception:
             self.max_memory_mb = 50
             self.max_file_size_mb = 10
-            self.lock_timeout_seconds = 30
+            self.lock_timeout_seconds = 5
 
         # Core components
         self.memory_manager = MemoryBackupManager()
@@ -102,61 +104,93 @@ class BackupSystem:
         file_path = Path(file_path)
 
         with self._lock:
-            # Validate file exists
-            if not file_path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
+            self._validate_backup_file(file_path)
 
-            # Check file size
-            file_size_mb = file_path.stat().st_size / (1024 * 1024)
-            if file_size_mb > self.max_file_size_mb:
-                raise MemoryLimitExceededError(
-                    f"File too large: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB"
-                )
+            # Don't acquire lock here - let apply_edit handle it
+            operation = self._create_backup_operation(file_path)
+            self._store_backup_operation(operation)
+            self._finalize_backup_operation(operation)
+            return operation.operation_id
 
-            # Acquire file lock
+    def _validate_backup_file(self, file_path: Path) -> None:
+        """Validate file for backup operation."""
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Check file size
+        file_size_mb = file_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > self.max_file_size_mb:
+            raise MemoryLimitExceededError(
+                f"File too large: {file_size_mb:.1f}MB > {self.max_file_size_mb}MB"
+            )
+
+    def _acquire_backup_lock(self, file_path: Path) -> Any:
+        """Acquire file lock for backup operation."""
+        try:
+            from .file_lock import acquire_file_lock
+
+            return acquire_file_lock(
+                file_path, lock_type="exclusive", timeout=self.lock_timeout_seconds
+            )
+        except Exception as e:
+            raise FileLockError(f"Failed to acquire lock for {file_path}: {e}")
+
+    def _create_backup_operation(self, file_path: Path) -> EditOperation:
+        """Create backup operation for file."""
+        # Create file state
+        file_state = FileState.from_file(file_path)
+
+        # Read file content
+        original_content = file_path.read_text(encoding="utf-8")
+
+        # Create edit operation
+        operation = EditOperation(file_path=str(file_path.absolute()))
+        operation.set_original_content(original_content)
+        operation.file_state = file_state
+        operation.set_status(EditStatus.IN_PROGRESS)
+
+        return operation
+
+    def _store_backup_operation(self, operation: Any) -> None:
+        """Store backup operation in memory manager."""
+        if not self.memory_manager.add_backup(operation):
+            raise MemoryLimitExceededError(
+                f"Cannot add backup - memory limit exceeded: "
+                f"{self.memory_manager.current_memory_mb:.1f}MB"
+            )
+
+        # Record memory operation
+        self.memory_monitor.record_operation(
+            operation.memory_size / (1024 * 1024), "backup_creation"
+        )
+
+    def _finalize_backup_operation(self, operation: Any) -> None:
+        """Finalize backup operation as completed."""
+        operation.set_status(EditStatus.COMPLETED)
+
+    def _cleanup_failed_backup(
+        self,
+        file_path: Path,
+        operation: Any,
+        error: Exception,
+    ) -> None:
+        """Clean up after failed backup operation."""
+        self.memory_manager.remove_backup(str(file_path))
+        operation.set_status(EditStatus.FAILED, str(error))
+
+    def _release_backup_lock(self, file_lock: Optional[Any]) -> None:
+        """Release backup lock file."""
+        if file_lock is not None:
             try:
-                file_lock = acquire_file_lock(
-                    file_path, lock_type="exclusive", timeout=self.lock_timeout_seconds
+                from .file_lock import release_file_lock
+
+                release_file_lock(
+                    file_lock.file_path
+                    if hasattr(file_lock, "file_path")
+                    else file_lock
                 )
-            except Exception as e:
-                raise FileLockError(f"Failed to acquire lock for {file_path}: {e}")
-
-            try:
-                # Create file state
-                file_state = FileState.from_file(file_path)
-
-                # Read file content
-                original_content = file_path.read_text(encoding="utf-8")
-
-                # Create edit operation
-                operation = EditOperation(file_path=str(file_path.absolute()))
-                operation.set_original_content(original_content)
-                operation.file_state = file_state
-                operation.set_status(EditStatus.IN_PROGRESS)
-
-                # Add to memory manager
-                if not self.memory_manager.add_backup(operation):
-                    raise MemoryLimitExceededError(
-                        f"Cannot add backup - memory limit exceeded: "
-                        f"{self.memory_manager.current_memory_mb:.1f}MB"
-                    )
-
-                # Record memory operation
-                self.memory_monitor.record_operation(
-                    operation.memory_size / (1024 * 1024), "backup_creation"
-                )
-
-                operation.set_status(EditStatus.COMPLETED)
-                return operation.operation_id
-
-            except Exception as e:
-                # Clean up on failure
-                self.memory_manager.remove_backup(str(file_path))
-                operation.set_status(EditStatus.FAILED, str(e))
-                raise
-            finally:
-                # Always release lock
-                release_file_lock(file_path)
+            except Exception:
+                pass
 
     def restore_file(self, file_path: Union[str, Path]) -> bool:
         """
@@ -191,7 +225,9 @@ class BackupSystem:
                 # Validate current file state if it exists
                 if file_path.exists():
                     current_content = file_path.read_text(encoding="utf-8")
-                    if operation.file_state and not operation.file_state.is_valid(current_content):
+                    if operation.file_state and not operation.file_state.is_valid(
+                        current_content
+                    ):
                         # File was modified externally, don't restore
                         return False
 
@@ -227,106 +263,181 @@ class BackupSystem:
         """
         file_path = Path(file_path)
 
-        with self._lock:
-            # Create backup first
-            try:
-                operation_id = self.backup_file(file_path)
-                operation = self.memory_manager.get_backup(str(file_path))
-                if not operation:
-                    return False, "Failed to create backup"
+        operation, error = self._create_backup_for_edit(file_path)
+        if not operation:
+            return False, error or "Failed to create backup"
 
-            except Exception as e:
-                return False, f"Backup failed: {e}"
+        if not self._validate_edit_content(operation, file_path, expected_old_content):
+            return False, "Content validation failed"
 
-            # Validate expected content if provided
-            if expected_old_content is not None:
-                current_content = file_path.read_text(encoding="utf-8")
-                if not operation.validate_content_match(expected_old_content):
-                    # Try to match with current content
-                    operation.set_original_content(current_content)
-                    if not operation.validate_content_match(expected_old_content):
-                        return False, "Content validation failed"
+        if not self._prepare_edit_content(operation, new_content, file_path):
+            return False, "Failed to prepare edit content"
 
-            # Set new content
-            try:
-                operation.set_new_content(new_content)
-            except MemoryLimitExceededError as e:
-                self.memory_manager.remove_backup(str(file_path))
-                return False, str(e)
-
-            # Acquire file lock for edit
-            try:
-                file_lock = acquire_file_lock(
-                    file_path, lock_type="exclusive", timeout=self.lock_timeout_seconds
-                )
-            except Exception as e:
-                self.memory_manager.remove_backup(str(file_path))
-                return False, f"Failed to acquire lock: {e}"
-
-            try:
-                # Write new content
-                file_path.write_text(new_content, encoding="utf-8")
-
-                # Update file state to reflect new content for rollback validation
-                try:
-                    operation.file_state = FileState.from_file(file_path)
-                except Exception:
-                    # If we can't update file state, clear it to allow rollback
-                    operation.file_state = None
-
-                # Update operation status
-                operation.set_status(EditStatus.COMPLETED)
-
-                # Release memory for successful edit
-                memory_freed = operation.memory_size / (1024 * 1024)
-                self.memory_monitor.release_operation(memory_freed)
-
-                return True, None
-
-            except Exception as e:
-                # Enhanced rollback on failure
-                rollback_success = False
-                rollback_error = None
-
-                try:
-                    if operation.original_content:
-                        # Validate rollback safety before proceeding
-                        current_content = file_path.read_text(encoding="utf-8")
-                        current_state = FileState.from_file(file_path)
-
-                        # Use FileState rollback validation if available
-                        if operation.file_state:
-                            can_rollback, reason = operation.file_state.can_safely_rollback(
-                                current_content, current_state
-                            )
-                            if not can_rollback:
-                                operation.set_status(
-                                    EditStatus.FAILED, f"Rollback unsafe: {reason}"
-                                )
-                                return False, f"Edit failed and rollback unsafe: {reason}"
-
-                        # Perform rollback
-                        file_path.write_text(operation.original_content, encoding="utf-8")
-                        operation.set_status(EditStatus.ROLLED_BACK)
-                        rollback_success = True
-
-                except Exception as rollback_exc:
-                    rollback_error = str(rollback_exc)
-                    operation.set_status(EditStatus.FAILED, f"Rollback failed: {rollback_error}")
-
-                # Construct error message
-                if rollback_success:
-                    error_msg = f"Edit failed but rollback succeeded: {e}"
-                elif rollback_error:
-                    error_msg = (
-                        f"Edit failed and rollback failed: {e}. Rollback error: {rollback_error}"
-                    )
-                else:
-                    error_msg = f"Edit failed: {e}"
-
-                return False, error_msg
-            finally:
+        file_lock = None
+        try:
+            file_lock = self._acquire_edit_lock(file_path)
+            if not file_lock:
+                return False, "Failed to acquire lock"
+            return self._execute_edit(operation, file_path, new_content)
+        except Exception as e:
+            return self._handle_edit_failure(operation, file_path, e)
+        finally:
+            if file_lock:
                 release_file_lock(file_path)
+
+    def _create_backup_for_edit(
+        self, file_path: Path
+    ) -> Tuple[Optional[Any], Optional[str]]:
+        """Create backup for edit operation."""
+        try:
+            operation_id = self.backup_file(file_path)
+            operation = self.memory_manager.get_backup(str(file_path))
+            return operation, None
+        except FileNotFoundError as e:
+            return None, str(e)
+        except Exception as e:
+            return None, f"Backup failed: {e}"
+
+    def _validate_edit_content(
+        self,
+        operation: Any,
+        file_path: Path,
+        expected_old_content: Optional[str],
+    ) -> bool:
+        """Validate expected content before edit."""
+        if expected_old_content is None:
+            return True
+
+        current_content = file_path.read_text(encoding="utf-8")
+        if not operation.validate_content_match(expected_old_content):
+            # Try to match with current content
+            operation.set_original_content(current_content)
+            if not operation.validate_content_match(expected_old_content):
+                return False
+
+        return True
+
+    def _prepare_edit_content(
+        self,
+        operation: Any,
+        new_content: str,
+        file_path: Path,
+    ) -> bool:
+        """Prepare content for edit operation."""
+        try:
+            operation.set_new_content(new_content)
+            return True
+        except MemoryLimitExceededError:
+            self.memory_manager.remove_backup(str(file_path))
+            return False
+
+    def _acquire_edit_lock(self, file_path: Path) -> bool:
+        """Acquire file lock for edit operation."""
+        try:
+            acquire_file_lock(
+                file_path, lock_type="exclusive", timeout=self.lock_timeout_seconds
+            )
+            return True
+        except Exception as e:
+            self.memory_manager.remove_backup(str(file_path))
+            return False
+
+    def _execute_edit(
+        self,
+        operation: Any,
+        file_path: Path,
+        new_content: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """Execute the edit operation."""
+        # Write new content
+        file_path.write_text(new_content, encoding="utf-8")
+
+        # Update file state to reflect new content for rollback validation
+        try:
+            operation.file_state = FileState.from_file(file_path)
+        except Exception:
+            # If we can't update file state, clear it to allow rollback
+            operation.file_state = None
+
+        # Update operation status
+        operation.set_status(EditStatus.COMPLETED)
+
+        # Release memory for successful edit
+        memory_freed = operation.memory_size / (1024 * 1024)
+        self.memory_monitor.release_operation(memory_freed)
+
+        return True, None
+
+    def _handle_edit_failure(
+        self,
+        operation: Any,
+        file_path: Path,
+        edit_error: Exception,
+    ) -> Tuple[bool, str]:
+        """Handle edit failure with rollback."""
+        rollback_success, rollback_error = self._attempt_rollback(operation, file_path)
+        error_msg = self._construct_error_message(
+            edit_error, rollback_success, rollback_error
+        )
+        return False, error_msg
+
+    def _attempt_rollback(
+        self,
+        operation: Any,
+        file_path: Path,
+    ) -> Tuple[bool, Optional[str]]:
+        """Attempt to rollback failed edit."""
+        if not operation.original_content:
+            return False, "No original content available"
+
+        try:
+            # Validate rollback safety before proceeding
+            if not self._validate_rollback_safety_for_edit(operation, file_path):
+                return False, "Rollback unsafe"
+
+            # Perform rollback
+            file_path.write_text(operation.original_content, encoding="utf-8")
+            operation.set_status(EditStatus.ROLLED_BACK)
+            return True, None
+
+        except Exception as e:
+            operation.set_status(EditStatus.FAILED, f"Rollback failed: {e}")
+            return False, str(e)
+
+    def _validate_rollback_safety_for_edit(
+        self,
+        operation: EditOperation,
+        file_path: Path,
+    ) -> bool:
+        """Validate rollback safety for edit operation."""
+        if not operation.file_state:
+            return True  # No validation available, proceed
+
+        try:
+            current_content = file_path.read_text(encoding="utf-8")
+            current_state = FileState.from_file(file_path)
+            can_rollback, reason = operation.file_state.can_safely_rollback(
+                current_content, current_state
+            )
+            if not can_rollback:
+                operation.set_status(EditStatus.FAILED, f"Rollback unsafe: {reason}")
+            return can_rollback
+        except Exception:
+            return True  # Validation failed, proceed with caution
+
+    def _construct_error_message(
+        self,
+        edit_error: Exception,
+        rollback_success: bool,
+        rollback_error: Optional[str],
+    ) -> str:
+        """Construct appropriate error message."""
+        if rollback_success:
+            return f"Edit failed but rollback succeeded: {edit_error}"
+        elif rollback_error:
+            return f"Edit failed and rollback failed: {edit_error}. Rollback error: {rollback_error}"
+        else:
+            return f"Edit failed: {edit_error}"
 
     def get_backup_info(self, file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
         """Get backup information for a file"""
@@ -387,17 +498,9 @@ class BackupSystem:
             # Clear manager
             self.memory_manager.clear_all()
 
-    def crash_recovery(self) -> Dict[str, Any]:
-        """
-        Perform crash recovery analysis and cleanup
-
-        This method analyzes the current state of backups and identifies any
-        operations that may have been interrupted by a crash or system failure.
-
-        Returns:
-            Dictionary with recovery analysis and actions taken
-        """
-        recovery_report: Dict[str, Any] = {
+    def _create_recovery_report(self) -> Dict[str, Any]:
+        """Create empty recovery report template."""
+        return {
             "timestamp": time.time(),
             "total_backups": 0,
             "analyzed_backups": 0,
@@ -412,83 +515,139 @@ class BackupSystem:
             "recommendations": [],
         }
 
+    def _analyze_backup_operations(
+        self, recovery_report: Dict[str, Any]
+    ) -> List[Tuple[str, Any]]:
+        """Analyze backup operations and identify incomplete ones."""
+        incomplete_operations = []
+
+        for file_path, operation in self.memory_manager.backup_cache.items():
+            recovery_report["analyzed_backups"] += 1
+
+            # Check for incomplete operations
+            if operation.status == EditStatus.IN_PROGRESS:
+                incomplete_operations.append((file_path, operation))
+                recovery_report["incomplete_operations"] += 1
+
+            # Check for very old operations that might be stale
+            elif operation.get_duration_seconds() > 3600:  # 1 hour
+                recovery_report["actions"].append(
+                    f"Found stale operation for {file_path} (age: {operation.get_duration_seconds():.0f}s)"
+                )
+
+        return incomplete_operations
+
+    def _recover_incomplete_operation(
+        self, file_path: str, operation, recovery_report: Dict[str, Any]
+    ) -> None:
+        """Attempt to recover a single incomplete operation."""
+        try:
+            # Check if file still exists
+            file_obj = Path(file_path)
+            if not file_obj.exists():
+                # File no longer exists, clean up backup
+                self.memory_manager.remove_backup(file_path)
+                recovery_report["cleaned_backups"] += 1
+                recovery_report["actions"].append(
+                    f"Cleaned up backup for missing file: {file_path}"
+                )
+                recovery_report["recovered_operations"] += 1
+                return
+
+            # Check current file state vs backup
+            self._analyze_file_state(file_path, operation, recovery_report)
+
+        except Exception as e:
+            recovery_report["failed_recoveries"] += 1
+            recovery_report["actions"].append(f"Recovery failed for {file_path}: {e}")
+
+    def _analyze_file_state(
+        self, file_path: str, operation, recovery_report: Dict[str, Any]
+    ) -> None:
+        """Analyze file state for recovery."""
+        try:
+            file_obj = Path(file_path)
+            current_content = file_obj.read_text(encoding="utf-8")
+            current_state = FileState.from_file(file_obj)
+
+            # If we have original file state, compare
+            if operation.file_state:
+                if operation.file_state.checksum == current_state.checksum:
+                    # File hasn't changed since backup, operation likely completed
+                    operation.set_status(EditStatus.COMPLETED)
+                    recovery_report["recovered_operations"] += 1
+                    recovery_report["actions"].append(
+                        f"Marked operation as completed for {file_path} (no changes detected)"
+                    )
+                else:
+                    # File has changed, need investigation
+                    recovery_report["recommendations"].append(
+                        f"File {file_path} has changed since backup - manual review needed"
+                    )
+                    operation.set_status(
+                        EditStatus.FAILED, "Crash recovery: file state mismatch"
+                    )
+            else:
+                # No file state to compare, assume incomplete
+                operation.set_status(
+                    EditStatus.FAILED, "Crash recovery: incomplete operation"
+                )
+                recovery_report["actions"].append(
+                    f"Marked operation as failed for {file_path} (incomplete)"
+                )
+
+        except Exception as e:
+            # Error analyzing file, mark as failed
+            operation.set_status(EditStatus.FAILED, f"Crash recovery error: {e}")
+            recovery_report["failed_recoveries"] += 1
+            recovery_report["actions"].append(f"Failed to analyze {file_path}: {e}")
+
+    def _add_recovery_recommendations(self, recovery_report: Dict[str, Any]) -> None:
+        """Add recommendations based on recovery analysis."""
+        if recovery_report["incomplete_operations"] > 0:
+            recovery_report["recommendations"].append(
+                f"Found {recovery_report['incomplete_operations']} incomplete operations - review recommended"
+            )
+
+        if recovery_report["failed_recoveries"] > 0:
+            recovery_report["recommendations"].append(
+                f"{recovery_report['failed_recoveries']} operations failed recovery - manual intervention may be needed"
+            )
+
+        # Memory usage check
+        memory_status = self.memory_manager.get_memory_usage()
+        if memory_status["usage_percent"] > 80:
+            recovery_report["recommendations"].append(
+                f"High memory usage ({memory_status['usage_percent']:.1f}%) - consider cleanup"
+            )
+
+    def crash_recovery(self) -> Dict[str, Any]:
+        """
+        Perform crash recovery analysis and cleanup
+
+        This method analyzes the current state of backups and identifies any
+        operations that may have been interrupted by a crash or system failure.
+
+        Returns:
+            Dictionary with recovery analysis and actions taken
+        """
+        recovery_report = self._create_recovery_report()
+
         with self._lock:
             try:
                 # Analyze all backup operations
-                incomplete_operations = []
-
-                for file_path, operation in self.memory_manager.backup_cache.items():
-                    recovery_report["analyzed_backups"] += 1
-
-                    # Check for incomplete operations
-                    if operation.status == EditStatus.IN_PROGRESS:
-                        incomplete_operations.append((file_path, operation))
-                        recovery_report["incomplete_operations"] += 1
-
-                    # Check for very old operations that might be stale
-                    elif operation.get_duration_seconds() > 3600:  # 1 hour
-                        recovery_report["actions"].append(
-                            f"Found stale operation for {file_path} (age: {operation.get_duration_seconds():.0f}s)"
-                        )
+                incomplete_operations = self._analyze_backup_operations(recovery_report)
 
                 # Attempt recovery for incomplete operations
                 for file_path, operation in incomplete_operations:
-                    try:
-                        # Check if file still exists
-                        file_obj = Path(file_path)
-                        if not file_obj.exists():
-                            # File no longer exists, clean up backup
-                            self.memory_manager.remove_backup(file_path)
-                            recovery_report["cleaned_backups"] += 1
-                            recovery_report["actions"].append(
-                                f"Cleaned up backup for missing file: {file_path}"
-                            )
-                            recovery_report["recovered_operations"] += 1
-                            continue
-
-                        # Check current file state vs backup
-                        try:
-                            current_content = file_obj.read_text(encoding="utf-8")
-                            current_state = FileState.from_file(file_obj)
-
-                            # If we have original file state, compare
-                            if operation.file_state:
-                                if operation.file_state.checksum == current_state.checksum:
-                                    # File hasn't changed since backup, operation likely completed
-                                    operation.set_status(EditStatus.COMPLETED)
-                                    recovery_report["recovered_operations"] += 1
-                                    recovery_report["actions"].append(
-                                        f"Marked operation as completed for {file_path} (no changes detected)"
-                                    )
-                                else:
-                                    # File has changed, need investigation
-                                    recovery_report["recommendations"].append(
-                                        f"File {file_path} has changed since backup - manual review needed"
-                                    )
-                                    operation.set_status(
-                                        EditStatus.FAILED, "Crash recovery: file state mismatch"
-                                    )
-                            else:
-                                # No file state to compare, assume incomplete
-                                operation.set_status(
-                                    EditStatus.FAILED, "Crash recovery: incomplete operation"
-                                )
-                                recovery_report["actions"].append(
-                                    f"Marked operation as failed for {file_path} (incomplete)"
-                                )
-
-                        except Exception as e:
-                            # Error analyzing file, mark as failed
-                            operation.set_status(EditStatus.FAILED, f"Crash recovery error: {e}")
-                            recovery_report["failed_recoveries"] += 1
-                            recovery_report["actions"].append(f"Failed to analyze {file_path}: {e}")
-
-                    except Exception as e:
-                        recovery_report["failed_recoveries"] += 1
-                        recovery_report["actions"].append(f"Recovery failed for {file_path}: {e}")
+                    self._recover_incomplete_operation(
+                        file_path, operation, recovery_report
+                    )
 
                 # Clean up expired operations
-                expired_count = self.memory_manager.cleanup_expired(max_age_seconds=7200)  # 2 hours
+                expired_count = self.memory_manager.cleanup_expired(
+                    max_age_seconds=7200
+                )  # 2 hours
                 if expired_count > 0:
                     recovery_report["cleaned_backups"] += expired_count
                     recovery_report["actions"].append(
@@ -496,22 +655,7 @@ class BackupSystem:
                     )
 
                 # Add recommendations based on analysis
-                if recovery_report["incomplete_operations"] > 0:
-                    recovery_report["recommendations"].append(
-                        f"Found {recovery_report['incomplete_operations']} incomplete operations - review recommended"
-                    )
-
-                if recovery_report["failed_recoveries"] > 0:
-                    recovery_report["recommendations"].append(
-                        f"{recovery_report['failed_recoveries']} operations failed recovery - manual intervention may be needed"
-                    )
-
-                # Memory usage check
-                memory_status = self.memory_manager.get_memory_usage()
-                if memory_status["usage_percent"] > 80:
-                    recovery_report["recommendations"].append(
-                        f"High memory usage ({memory_status['usage_percent']:.1f}%) - consider cleanup"
-                    )
+                self._add_recovery_recommendations(recovery_report)
 
                 recovery_report["actions"].append("Crash recovery analysis completed")
 
@@ -545,89 +689,18 @@ class BackupSystem:
                 "actions": [],
             }
 
-        rollback_report: Dict[str, Any] = {
-            "timestamp": time.time(),
-            "total_operations": 0,
-            "rolled_back_operations": 0,
-            "failed_rollbacks": 0,
-            "warnings": [],
-        }
+        rollback_report = self._create_rollback_report()
 
         with self._lock:
             try:
-                # Find all operations that need rollback
-                operations_to_rollback = []
-
-                for file_path, operation in self.memory_manager.backup_cache.items():
-                    # Rollback in-progress or failed operations
-                    if operation.status in [EditStatus.IN_PROGRESS, EditStatus.FAILED]:
-                        if operation.original_content:
-                            operations_to_rollback.append((file_path, operation))
-
-                rollback_report["actions"].append(
-                    f"Found {len(operations_to_rollback)} operations requiring emergency rollback"
+                operations_to_rollback = self._find_operations_needing_rollback(
+                    rollback_report
                 )
-
-                # Perform rollbacks
-                for file_path, operation in operations_to_rollback:
-                    try:
-                        file_obj = Path(file_path)
-
-                        # Check if file exists
-                        if not file_obj.exists():
-                            rollback_report["actions"].append(
-                                f"Skipping rollback for missing file: {file_path}"
-                            )
-                            continue
-
-                        # Validate rollback safety if possible
-                        if operation.file_state:
-                            try:
-                                current_content = file_obj.read_text(encoding="utf-8")
-                                current_state = FileState.from_file(file_obj)
-                                can_rollback, reason = operation.file_state.can_safely_rollback(
-                                    current_content, current_state
-                                )
-                                if not can_rollback:
-                                    rollback_report["warnings"].append(
-                                        f"Unsafe rollback for {file_path}: {reason}"
-                                    )
-                                    continue
-                            except Exception:
-                                # If validation fails, proceed with caution
-                                rollback_report["warnings"].append(
-                                    f"Could not validate rollback safety for {file_path}"
-                                )
-
-                        # Perform rollback
-                        if operation.original_content is not None:
-                            file_obj.write_text(operation.original_content, encoding="utf-8")
-                        else:
-                            raise EditOperationError("No original content available for rollback")
-                        operation.set_status(EditStatus.ROLLED_BACK)
-                        rollback_report["rolled_back_operations"] += 1
-                        rollback_report["actions"].append(f"Successfully rolled back: {file_path}")
-
-                    except Exception as e:
-                        rollback_report["failed_rollbacks"] += 1
-                        rollback_report["actions"].append(f"Failed to rollback {file_path}: {e}")
-
-                # Clean up memory after emergency rollback
-                for file_path, operation in operations_to_rollback:
-                    if operation.status == EditStatus.ROLLED_BACK:
-                        memory_freed = getattr(operation, "memory_size", 0) / (1024 * 1024)
-                        self.memory_monitor.release_operation(memory_freed)
-                        self.memory_manager.remove_backup(file_path)
-
-                if rollback_report["rolled_back_operations"] > 0:
-                    rollback_report["actions"].append(
-                        f"Emergency rollback completed: {rollback_report['rolled_back_operations']} files restored"
-                    )
-
-                if rollback_report["warnings"]:
-                    rollback_report["actions"].append(
-                        f"Generated {len(rollback_report['warnings'])} warnings during rollback"
-                    )
+                self._perform_emergency_rollbacks(
+                    operations_to_rollback, rollback_report
+                )
+                self._cleanup_after_rollback(operations_to_rollback, rollback_report)
+                self._add_rollback_summary(rollback_report)
 
             except Exception as e:
                 rollback_report["success"] = False
@@ -635,6 +708,143 @@ class BackupSystem:
                 rollback_report["actions"].append(f"Emergency rollback failed: {e}")
 
         return rollback_report
+
+    def _create_rollback_report(self) -> Dict[str, Any]:
+        """Create rollback report template."""
+        return {
+            "timestamp": time.time(),
+            "total_operations": 0,
+            "rolled_back_operations": 0,
+            "failed_rollbacks": 0,
+            "warnings": [],
+            "actions": [],
+        }
+
+    def _find_operations_needing_rollback(
+        self, rollback_report: Dict[str, Any]
+    ) -> List[Tuple[str, Any]]:
+        """Find all operations that need emergency rollback."""
+        operations_to_rollback = []
+
+        for file_path, operation in self.memory_manager.backup_cache.items():
+            # Rollback in-progress or failed operations
+            if operation.status in [EditStatus.IN_PROGRESS, EditStatus.FAILED]:
+                if operation.original_content:
+                    operations_to_rollback.append((file_path, operation))
+
+        rollback_report["actions"].append(
+            f"Found {len(operations_to_rollback)} operations requiring emergency rollback"
+        )
+        return operations_to_rollback
+
+    def _perform_emergency_rollbacks(
+        self,
+        operations_to_rollback: List[Tuple[str, Any]],
+        rollback_report: Dict[str, Any],
+    ) -> None:
+        """Perform emergency rollback operations."""
+        for file_path, operation in operations_to_rollback:
+            try:
+                if not self._validate_and_prepare_rollback(
+                    file_path, operation, rollback_report
+                ):
+                    continue
+
+                self._execute_rollback(file_path, operation)
+                rollback_report["rolled_back_operations"] += 1
+                rollback_report["actions"].append(
+                    f"Successfully rolled back: {file_path}"
+                )
+
+            except Exception as e:
+                rollback_report["failed_rollbacks"] += 1
+                rollback_report["actions"].append(
+                    f"Failed to rollback {file_path}: {e}"
+                )
+
+    def _validate_and_prepare_rollback(
+        self,
+        file_path: str,
+        operation: Any,
+        rollback_report: Dict[str, Any],
+    ) -> bool:
+        """Validate rollback safety and prepare file."""
+        file_obj = Path(file_path)
+
+        # Check if file exists
+        if not file_obj.exists():
+            rollback_report["actions"].append(
+                f"Skipping rollback for missing file: {file_path}"
+            )
+            return False
+
+        # Validate rollback safety if possible
+        if operation.file_state:
+            if not self._validate_rollback_safety(file_obj, operation, rollback_report):
+                return False
+
+        return True
+
+    def _validate_rollback_safety(
+        self,
+        file_obj: Path,
+        operation: Any,
+        rollback_report: Dict[str, Any],
+    ) -> bool:
+        """Validate if rollback is safe for the given file."""
+        try:
+            current_content = file_obj.read_text(encoding="utf-8")
+            current_state = FileState.from_file(file_obj)
+            can_rollback, reason = operation.file_state.can_safely_rollback(
+                current_content, current_state
+            )
+            if not can_rollback:
+                rollback_report["warnings"].append(
+                    f"Unsafe rollback for {file_obj}: {reason}"
+                )
+                return False
+        except Exception:
+            # If validation fails, proceed with caution
+            rollback_report["warnings"].append(
+                f"Could not validate rollback safety for {file_obj}"
+            )
+
+        return True
+
+    def _execute_rollback(self, file_path: str, operation: Any) -> None:
+        """Execute the actual rollback operation."""
+        file_obj = Path(file_path)
+
+        if operation.original_content is not None:
+            file_obj.write_text(operation.original_content, encoding="utf-8")
+        else:
+            raise EditOperationError("No original content available for rollback")
+
+        operation.set_status(EditStatus.ROLLED_BACK)
+
+    def _cleanup_after_rollback(
+        self,
+        operations_to_rollback: List[Tuple[str, Any]],
+        rollback_report: Dict[str, Any],
+    ) -> None:
+        """Clean up memory after emergency rollback."""
+        for file_path, operation in operations_to_rollback:
+            if operation.status == EditStatus.ROLLED_BACK:
+                memory_freed = getattr(operation, "memory_size", 0) / (1024 * 1024)
+                self.memory_monitor.release_operation(memory_freed)
+                self.memory_manager.remove_backup(file_path)
+
+    def _add_rollback_summary(self, rollback_report: Dict[str, Any]) -> None:
+        """Add summary information to rollback report."""
+        if rollback_report["rolled_back_operations"] > 0:
+            rollback_report["actions"].append(
+                f"Emergency rollback completed: {rollback_report['rolled_back_operations']} files restored"
+            )
+
+        if rollback_report["warnings"]:
+            rollback_report["actions"].append(
+                f"Generated {len(rollback_report['warnings'])} warnings during rollback"
+            )
 
 
 # Global backup system instance
@@ -668,7 +878,9 @@ def restore_file(file_path: Union[str, Path]) -> bool:
 
 
 def apply_edit_with_backup(
-    file_path: Union[str, Path], new_content: str, expected_old_content: Optional[str] = None
+    file_path: Union[str, Path],
+    new_content: str,
+    expected_old_content: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Apply edit with backup using global system"""
     system = get_backup_system()
