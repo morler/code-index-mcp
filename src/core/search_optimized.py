@@ -42,6 +42,7 @@ class OptimizedSearchEngine:
             "text": self._search_text_optimized,
             "regex": self._search_regex_optimized,
             "symbol": self._search_symbol_direct,
+            "files": self._search_files_direct,
             "references": self._find_references_direct,
             "definition": self._find_definition_direct,
             "callers": self._find_callers_direct,
@@ -170,6 +171,11 @@ class OptimizedSearchEngine:
         from .semantic_ops import SemanticOperations
 
         return SemanticOperations(self.index).find_hierarchy_direct(query)
+
+    def _search_files_direct(self, query: SearchQuery) -> List[Dict[str, Any]]:
+        """文件搜索 - 直接使用index的find_files_by_pattern"""
+        files = self.index.find_files_by_pattern(query.pattern)
+        return [{"file": file_path} for file_path in files]
 
     def _match_file_pattern(self, file_path: str, pattern: str) -> bool:
         """文件模式匹配 - 简单实现"""

@@ -84,11 +84,15 @@ class IndexBuilder:
         try:
             import ast
 
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             tree = ast.parse(content)
-            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {
+                "functions": [],
+                "classes": [],
+                "imports": [],
+            }
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.FunctionDef):
@@ -110,16 +114,20 @@ class IndexBuilder:
     def _process_vlang_regex(self, file_path: str) -> None:
         """V语言正则处理 - 简单模式匹配"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {
+                "functions": [],
+                "classes": [],
+                "imports": [],
+            }
 
             # 简单的正则匹配
-            functions = re.findall(r'fn\s+(\w+)\s*\(', content)
+            functions = re.findall(r"fn\s+(\w+)\s*\(", content)
             symbols["functions"] = functions
 
-            imports = re.findall(r'import\s+([^\s]+)', content)
+            imports = re.findall(r"import\s+([^\s]+)", content)
             symbols["imports"] = imports
 
             self._register_symbols(symbols, file_path)
@@ -138,31 +146,35 @@ class IndexBuilder:
             if not parser:
                 return
 
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 content = f.read()
 
             tree = parser.parse(content)
-            symbols: Dict[str, List[str]] = {"functions": [], "classes": [], "imports": []}
+            symbols: Dict[str, List[str]] = {
+                "functions": [],
+                "classes": [],
+                "imports": [],
+            }
 
             # 简单的节点遍历
             def walk_tree(node):
-                if hasattr(node, 'type'):
+                if hasattr(node, "type"):
                     node_type = node.type
 
                     # 函数定义
-                    if 'function' in node_type.lower() or 'method' in node_type.lower():
+                    if "function" in node_type.lower() or "method" in node_type.lower():
                         name = self._extract_name(node, content)
                         if name:
                             symbols["functions"].append(name)
 
                     # 类定义
-                    elif 'class' in node_type.lower():
+                    elif "class" in node_type.lower():
                         name = self._extract_name(node, content)
                         if name:
                             symbols["classes"].append(name)
 
                     # 导入语句
-                    elif 'import' in node_type.lower():
+                    elif "import" in node_type.lower():
                         imp = self._extract_import(node, content)
                         if imp:
                             symbols["imports"].append(imp)
@@ -180,10 +192,10 @@ class IndexBuilder:
         """提取节点名称 - 简单实现"""
         try:
             for child in node.children:
-                if hasattr(child, 'type') and 'identifier' in child.type:
+                if hasattr(child, "type") and "identifier" in child.type:
                     start = child.start_byte
                     end = child.end_byte
-                    return content[start:end].decode('utf-8')
+                    return content[start:end].decode("utf-8")
         except Exception:
             pass
         return None
@@ -193,19 +205,48 @@ class IndexBuilder:
         try:
             start = node.start_byte
             end = node.end_byte
-            return content[start:end].decode('utf-8').strip()
+            return content[start:end].decode("utf-8").strip()
         except Exception:
             pass
         return None
 
     def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
         """注册符号到索引 - 直接数据操作"""
+        from .index import FileInfo
+        from .builder_decorators import detect_language
+
+        # 首先创建文件信息
+        if file_path not in self.index.files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    line_count = len(f.read().splitlines())
+
+                language = detect_language(file_path)
+                file_info = FileInfo(
+                    language=language,
+                    line_count=line_count,
+                    symbols=symbols,
+                    imports=symbols.get("imports", []),
+                )
+                self.index.add_file(file_path, file_info)
+            except Exception:
+                # 如果文件读取失败，创建基本文件信息
+                language = detect_language(file_path)
+                file_info = FileInfo(
+                    language=language,
+                    line_count=0,
+                    symbols=symbols,
+                    imports=symbols.get("imports", []),
+                )
+                self.index.add_file(file_path, file_info)
+
+        # 然后注册符号
         for symbol_type, symbol_list in symbols.items():
             for symbol in symbol_list:
                 if symbol:  # 确保非空
                     symbol_info = SymbolInfo(
-                        type=symbol_type.rstrip('s'),  # 去掉复数形式
+                        type=symbol_type.rstrip("s"),  # 去掉复数形式
                         file=file_path,
-                        line=1  # 简化处理
+                        line=1,  # 简化处理
                     )
                     self.index.add_symbol(symbol, symbol_info)

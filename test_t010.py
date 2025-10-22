@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, '.')
+sys.path.insert(0, './src')
 
 def test_api_contract_changes():
     """Test API contract reflects memory backup changes"""
@@ -81,12 +81,12 @@ def test_memory_backup_api():
     print("🔧 Testing memory backup API...")
     
     try:
-        from src.code_index_mcp.core.edit_operations import MemoryEditOperations
-        from src.code_index_mcp.core.backup import get_backup_system
+        from code_index_mcp.core.edit_operations import MemoryEditOperations
+        from code_index_mcp.core.backup import get_backup_system
         
         # Test memory backup API
         edit_ops = MemoryEditOperations()
-        from src.code_index_mcp.core.backup import get_backup_status
+        from code_index_mcp.core.backup import get_backup_status
         
         # Test backup status API
         status = get_backup_status()
@@ -101,7 +101,7 @@ def test_memory_backup_api():
             return False
         
         # Test memory usage API
-        from src.code_index_mcp.core.memory_monitor import get_memory_monitor
+        from code_index_mcp.core.memory_monitor import get_memory_monitor
         monitor = get_memory_monitor()
         
         memory_status = monitor.get_current_usage()

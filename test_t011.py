@@ -11,14 +11,14 @@ import time
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, '.')
+sys.path.insert(0, './src')
 
 def test_no_disk_backups_created():
     """Verify no disk backup files are created during operations"""
     print("🔧 Testing no disk backups created...")
     
     try:
-        from src.core.index import CodeIndex
+        from core.index import CodeIndex
         
         # Create temporary test file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -77,8 +77,8 @@ def test_memory_backup_functionality():
     print("🔧 Testing memory backup functionality...")
     
     try:
-        from src.code_index_mcp.core.edit_operations import MemoryEditOperations
-        from src.code_index_mcp.core.backup import get_backup_system
+        from code_index_mcp.core.edit_operations import MemoryEditOperations
+        from code_index_mcp.core.backup import get_backup_system
         
         # Create temporary test file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -102,7 +102,7 @@ def test_memory_backup_functionality():
                 return False
             
             # Verify backup was created in memory
-            from src.code_index_mcp.core.backup import get_backup_status
+            from code_index_mcp.core.backup import get_backup_status
             backup_status = get_backup_status()
             backup_count = backup_status['backups'].get('backup_count', 0)
             if backup_count > 0:
@@ -153,7 +153,7 @@ def test_performance_improvement():
     print("🔧 Testing performance improvement...")
     
     try:
-        from src.code_index_mcp.core.edit_operations import MemoryEditOperations
+        from code_index_mcp.core.edit_operations import MemoryEditOperations
         import time
         
         # Create temporary test file
@@ -208,7 +208,7 @@ def test_error_handling():
     print("🔧 Testing error handling...")
     
     try:
-        from src.code_index_mcp.core.edit_operations import MemoryEditOperations
+        from code_index_mcp.core.edit_operations import MemoryEditOperations
         
         edit_ops = MemoryEditOperations()
         

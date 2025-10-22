@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, cast
 from .builder import handle_mcp_errors
 from .index import SearchQuery, get_index
 from .index import set_project_path as core_set_project_path
+
 # 向后兼容 - 导出execute_tool
 from .tool_registry import execute_tool
 
