@@ -25,7 +25,6 @@ from .memory_monitor import check_memory_limits
 TAB_TO_SPACES = 4  # 制表符转空格数量
 MAX_ERROR_PREVIEW = 100  # 错误信息预览长度
 MAX_CONTENT_SIZE = 50 * 1024 * 1024  # 50MB 最大内容大小限制
-PARTIAL_MATCH_THRESHOLD = 0.8  # 部分匹配阈值
 
 
 def normalize_whitespace(content: str) -> str:
@@ -141,11 +140,6 @@ def find_content_match(
         # 如果逐行匹配失败，使用标准化位置
         return True, None, norm_pos
 
-    # 尝试部分匹配（用于删除操作）
-    partial_pos = _find_partial_match(content, search_content)
-    if partial_pos is not None:
-        return True, None, partial_pos
-
     # 生成详细的错误信息
     return False, _generate_error_details(content, search_content), None
 
@@ -173,42 +167,9 @@ def _find_original_position(
     return None
 
 
-def _find_partial_match(content: str, search_content: str) -> Optional[int]:
-    """
-    查找部分匹配，用于删除操作。
-
-    Args:
-        content: 完整内容
-        search_content: 搜索内容
-
-    Returns:
-        匹配位置或None
-    """
-    search_lines = [line.strip() for line in search_content.split("\n") if line.strip()]
-    if not search_lines:
-        return None
-
-    content_lines = content.split("\n")
-
-    for i in range(len(content_lines) - len(search_lines) + 1):
-        content_section = content_lines[i : i + len(search_lines)]
-
-        # 更严格的匹配条件：检查相似度
-        matches = 0
-        for search_line, content_line in zip(search_lines, content_section):
-            if search_line in content_line:
-                matches += 1
-
-        # 只有当匹配度达到阈值时才认为找到匹配
-        if matches / len(search_lines) >= PARTIAL_MATCH_THRESHOLD:
-            return calculate_line_position(content_lines, i)
-
-    return None
-
-
 def _generate_error_details(content: str, search_content: str) -> str:
     """
-    生成详细的错误信息。
+    生成基本的错误信息。
 
     Args:
         content: 完整内容
@@ -218,16 +179,9 @@ def _generate_error_details(content: str, search_content: str) -> str:
         错误信息字符串
     """
     error_lines = []
-    error_lines.append("Content mismatch details:")
-    error_lines.append(
-        f"Expected content (first {MAX_ERROR_PREVIEW} chars): {repr(search_content[:MAX_ERROR_PREVIEW])}"
-    )
-    error_lines.append(
-        f"Actual content (first {MAX_ERROR_PREVIEW} chars): {repr(content[:MAX_ERROR_PREVIEW])}"
-    )
-
-    if search_content.strip() not in content:
-        error_lines.append("Search content not found in file")
+    error_lines.append("Content mismatch:")
+    error_lines.append(f"Expected: {repr(search_content[:MAX_ERROR_PREVIEW])}")
+    error_lines.append(f"Actual: {repr(content[:MAX_ERROR_PREVIEW])}")
 
     return "\n".join(error_lines)
 

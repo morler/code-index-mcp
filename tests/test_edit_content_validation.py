@@ -104,7 +104,7 @@ class TestEditContentValidation:
         found, error, pos = find_content_match(content, search)
         assert not found
         assert error is not None
-        assert "Content mismatch details:" in error
+        assert "Content mismatch:" in error
         assert pos is None
 
     def test_edit_with_whitespace_tolerance(self, temp_project):
@@ -171,9 +171,9 @@ class TestEditContentValidation:
 
         assert not success
         assert "Content validation failed" in error
-        assert "Content mismatch details:" in error
-        assert "Expected content" in error
-        assert "Actual content" in error
+        assert "Content mismatch:" in error
+        assert "Expected:" in error
+        assert "Actual:" in error
 
     def test_edit_empty_old_content(self, temp_project):
         """测试空旧内容的情况"""
@@ -245,20 +245,6 @@ class TestEditContentValidation:
         # 第三行位置应该是前两行长度 + 两个换行符
         pos2 = calculate_line_position(lines, 2)
         assert pos2 == len("line1") + 1 + len("line2") + 1
-
-    def test_partial_match_threshold(self, temp_project):
-        """测试部分匹配阈值"""
-        file_path = temp_project / "test_threshold.py"
-        file_path.write_text("def func():\n    line1\n    line2\n    line3\n")
-
-        # 测试低于阈值的匹配（应该失败）
-        low_match_content = "    line1\n    completely_different_line"
-        ops = MemoryEditOperations()
-        success, error = ops.edit_file_atomic(str(file_path), low_match_content, "")
-
-        # 应该失败，因为匹配度低于阈值
-        assert not success
-        assert "Content validation failed" in error
 
     def test_unicode_content_handling(self, temp_project):
         """测试Unicode内容处理"""
@@ -371,9 +357,6 @@ def run_validation_tests():
 
             test_instance.test_calculate_line_position()
             print("✅ Line position calculation test passed")
-
-            test_instance.test_partial_match_threshold(project_path)
-            print("✅ Partial match threshold test passed")
 
             test_instance.test_unicode_content_handling(project_path)
             print("✅ Unicode content handling test passed")

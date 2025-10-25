@@ -58,8 +58,8 @@ class LockInfo:
         """Get lock age in seconds"""
         return time.time() - self.acquired_at
 
-    def is_expired(self, max_age_seconds: float = 30.0) -> bool:
-        """Check if lock is expired"""
+    def is_expired(self, max_age_seconds: float = 10.0) -> bool:
+        """Check if lock is expired (reduced default for better cleanup)"""
         return self.age_seconds > max_age_seconds
 
 
@@ -103,7 +103,7 @@ class FileLock:
         self,
         file_path: Union[str, Path],
         lock_type: str = "exclusive",
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 5.0,  # Reduced from 30s to 5s for better responsiveness
         retry_interval: float = 0.01,  # Reduce retry interval from 0.1s to 0.01s
     ):
         self.file_path = Path(file_path)
@@ -113,7 +113,7 @@ class FileLock:
 
         # Lock state
         self._locked = False
-        self._lock_file: Optional[TextIO] = None
+        self._lock_file: Optional[Union[TextIO, Path]] = None
         self._lock_info: Optional[LockInfo] = None
         self._platform_lock: Any = None
 
@@ -131,7 +131,7 @@ class FileLock:
 
     def acquire(self, blocking: bool = True, timeout: Optional[float] = None) -> bool:
         """
-        Acquire file lock
+        Acquire file lock with exponential backoff retry
 
         Args:
             blocking: Whether to block until lock is acquired
@@ -146,6 +146,8 @@ class FileLock:
 
             timeout = timeout if timeout is not None else self.timeout_seconds
             start_time = time.time()
+            retry_count = 0
+            base_retry_interval = self.retry_interval
 
             while True:
                 try:
@@ -175,8 +177,14 @@ class FileLock:
                         f"Lock acquisition timed out after {timeout:.1f}s"
                     )
 
-                # Wait before retry
-                time.sleep(self.retry_interval)
+                # Exponential backoff: increase retry interval after each attempt
+                retry_interval = min(
+                    base_retry_interval * (2 ** min(retry_count, 5)), 0.5
+                )  # Cap at 0.5s
+                retry_count += 1
+
+                # Wait before retry with exponential backoff
+                time.sleep(retry_interval)
 
     def release(self) -> None:
         """Release file lock"""
@@ -379,28 +387,45 @@ class FileLock:
 
             # Check if lock file already exists
             if lock_file_path.exists():
-                # Check if lock is stale (older than 30 seconds)
-                lock_age = time.time() - lock_file_path.stat().st_mtime
-                if lock_age < 30.0:
-                    return False  # Lock is active
+                # Check if lock is stale (older than 10 seconds for better cleanup)
+                try:
+                    lock_age = time.time() - lock_file_path.stat().st_mtime
+                    if lock_age < 10.0:
+                        return False  # Lock is active
+                    else:
+                        # Remove stale lock file with better error handling
+                        try:
+                            lock_file_path.unlink()
+                        except (OSError, IOError, PermissionError):
+                            # If we can't remove the stale lock, consider it active
+                            return False
+                except (OSError, IOError):
+                    # If we can't stat the file, consider it active for safety
+                    return False
+
+            # Create lock file with PID and timestamp
+            lock_content = f"{os.getpid()}\n{time.time()}\n{self.lock_type}\n"
+            try:
+                lock_file_path.write_text(lock_content)
+            except (OSError, IOError, PermissionError):
+                return False
+
+            # Double-check that we created it (race condition protection)
+            try:
+                content = lock_file_path.read_text()
+                if content.startswith(str(os.getpid())):
+                    # Store the lock file path for cleanup
+                    self._lock_file = lock_file_path
+                    return True
                 else:
-                    # Remove stale lock file
+                    # Race condition - another process got there first
                     try:
                         lock_file_path.unlink()
                     except Exception:
-                        return False
-
-            # Create lock file with PID
-            lock_content = f"{os.getpid()}\n{time.time()}\n{self.lock_type}\n"
-            lock_file_path.write_text(lock_content)
-
-            # Double-check that we created it (race condition protection)
-            content = lock_file_path.read_text()
-            if content.startswith(str(os.getpid())):
-                # Don't assign Path to TextIO variable
-                return True
-            else:
-                # Race condition - another process got there first
+                        pass
+                    return False
+            except (OSError, IOError):
+                # If we can't read the file, consider it failed
                 try:
                     lock_file_path.unlink()
                 except Exception:
@@ -411,18 +436,28 @@ class FileLock:
             return False
 
     def _try_release_file_based(self) -> None:
-        """File-based lock release (fallback)"""
+        """File-based lock release (fallback) with enhanced reliability"""
         if self._lock_file:
             try:
                 if isinstance(self._lock_file, Path):
                     # It's a lock file path
                     if self._lock_file.exists():
-                        content = self._lock_file.read_text()
-                        if content.startswith(str(os.getpid())):
-                            self._lock_file.unlink()
+                        try:
+                            content = self._lock_file.read_text()
+                            if content.startswith(str(os.getpid())):
+                                self._lock_file.unlink()
+                        except (OSError, IOError, PermissionError):
+                            # If we can't read or unlink, try to force remove
+                            try:
+                                self._lock_file.unlink(missing_ok=True)
+                            except Exception:
+                                pass  # Best effort
                 else:
                     # It's a file handle
-                    self._lock_file.close()
+                    try:
+                        self._lock_file.close()
+                    except Exception:
+                        pass
             except Exception:
                 pass  # Best effort cleanup
             finally:
@@ -473,7 +508,7 @@ class LockManager:
         self,
         file_path: Union[str, Path],
         lock_type: str = "exclusive",
-        timeout: float = 30.0,
+        timeout: float = 5.0,  # Reduced from 30s to 5s for better responsiveness
     ) -> FileLock:
         """Acquire or get existing file lock"""
         with self._lock:
@@ -486,7 +521,7 @@ class LockManager:
                     # Allow reentrant locks from same thread
                     if existing_lock.lock_type == lock_type or lock_type == "shared":
                         return existing_lock
-                    elif existing_lock._lock._is_owned():
+                    elif existing_lock.is_locked():
                         # Same thread, allow reentrant
                         return existing_lock
                     else:
@@ -552,7 +587,9 @@ class LockManager:
 
             return stats
 
-    def cleanup_stale_locks(self, max_age_seconds: float = 300.0) -> int:
+    def cleanup_stale_locks(
+        self, max_age_seconds: float = 60.0
+    ) -> int:  # Reduced from 300s to 60s for better cleanup
         """Clean up stale locks (older than max_age_seconds)"""
         with self._lock:
             stale_count = 0
@@ -589,7 +626,9 @@ def get_lock_manager() -> LockManager:
 
 # Convenience functions
 def acquire_file_lock(
-    file_path: Union[str, Path], lock_type: str = "exclusive", timeout: float = 30.0
+    file_path: Union[str, Path],
+    lock_type: str = "exclusive",
+    timeout: float = 5.0,  # Reduced from 30s to 5s
 ) -> FileLock:
     """Acquire file lock using global manager"""
     manager = get_lock_manager()
@@ -629,7 +668,9 @@ def is_file_locked(file_path: Union[str, Path]) -> bool:
 # Context manager convenience
 @contextmanager
 def file_lock(
-    file_path: Union[str, Path], lock_type: str = "exclusive", timeout: float = 30.0
+    file_path: Union[str, Path],
+    lock_type: str = "exclusive",
+    timeout: float = 5.0,  # Reduced from 30s to 5s
 ):
     """Context manager for file locking"""
     lock = acquire_file_lock(file_path, lock_type, timeout)
