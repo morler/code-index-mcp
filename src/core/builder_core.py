@@ -36,6 +36,7 @@ class IndexBuilder:
             ".h": self._process_tree_sitter,
             ".cpp": self._process_tree_sitter,
             ".hpp": self._process_tree_sitter,
+            ".odin": self._process_tree_sitter,
         }
 
     def build_index(self, root_path: Optional[str] = None) -> None:
@@ -161,20 +162,37 @@ class IndexBuilder:
                 if hasattr(node, "type"):
                     node_type = node.type
 
-                    # 函数定义
-                    if "function" in node_type.lower() or "method" in node_type.lower():
+                    # 函数定义 - 支持多种语言
+                    if (
+                        node_type
+                        in [
+                            "procedure_declaration",
+                            "function_declaration",
+                            "function_definition",
+                        ]
+                        or "function" in node_type.lower()
+                        or "method" in node_type.lower()
+                    ):
                         name = self._extract_name(node, content)
                         if name:
                             symbols["functions"].append(name)
 
-                    # 类定义
-                    elif "class" in node_type.lower():
+                    # 类/结构体定义 - 支持多种语言
+                    elif (
+                        node_type
+                        in [
+                            "struct_declaration",
+                            "class_declaration",
+                            "class_definition",
+                        ]
+                        or "class" in node_type.lower()
+                    ):
                         name = self._extract_name(node, content)
                         if name:
                             symbols["classes"].append(name)
 
-                    # 导入语句
-                    elif "import" in node_type.lower():
+                    # 导入语句 - 只处理import_declaration避免重复
+                    elif node_type == "import_declaration":
                         imp = self._extract_import(node, content)
                         if imp:
                             symbols["imports"].append(imp)
@@ -203,9 +221,18 @@ class IndexBuilder:
     def _extract_import(self, node, content: bytes) -> Optional[str]:
         """提取导入语句 - 简单实现"""
         try:
-            start = node.start_byte
-            end = node.end_byte
-            return content[start:end].decode("utf-8").strip()
+            # 对于import_declaration，只提取字符串内容
+            if node.type == "import_declaration":
+                for child in node.children:
+                    if hasattr(child, "type") and child.type == "string":
+                        start = child.start_byte
+                        end = child.end_byte
+                        return content[start:end].decode("utf-8").strip()
+            else:
+                # 其他情况，提取整个节点
+                start = node.start_byte
+                end = node.end_byte
+                return content[start:end].decode("utf-8").strip()
         except Exception:
             pass
         return None
@@ -244,8 +271,18 @@ class IndexBuilder:
         for symbol_type, symbol_list in symbols.items():
             for symbol in symbol_list:
                 if symbol:  # 确保非空
+                    # 正确的单数形式转换
+                    if symbol_type == "functions":
+                        type_name = "function"
+                    elif symbol_type == "classes":
+                        type_name = "class"
+                    elif symbol_type == "imports":
+                        type_name = "import"
+                    else:
+                        type_name = symbol_type.rstrip("s")
+
                     symbol_info = SymbolInfo(
-                        type=symbol_type.rstrip("s"),  # 去掉复数形式
+                        type=type_name,
                         file=file_path,
                         line=1,  # 简化处理
                     )
