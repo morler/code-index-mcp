@@ -100,50 +100,100 @@ class IndexBuilder:
                     symbols["functions"].append(node.name)
                 elif isinstance(node, ast.ClassDef):
                     symbols["classes"].append(node.name)
-                elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        symbols["imports"].append(alias.name)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    symbols["imports"].append(node.module)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            symbols["imports"].append(alias.name)
+                    else:
+                        module = node.module or ""
+                        for alias in node.names:
+                            symbols["imports"].append(f"{module}.{alias.name}")
 
-            self._register_symbols(symbols, file_path)
+            # 提取符号行号信息
+            symbol_lines = self._extract_python_symbol_lines(content, symbols)
+
+            # 注册符号到索引
+            self._register_symbols_with_lines(symbols, symbol_lines, file_path)
 
         except Exception:
-            # Linus原则: 静默失败，不中断整体流程
+            # 静默失败，继续处理其他文件
             pass
 
+    def _extract_python_symbol_lines(
+        self, content: str, symbols: Dict[str, List[str]]
+    ) -> Dict[str, int]:
+        """提取Python符号的行号"""
+        lines = content.split("\n")
+        symbol_lines: Dict[str, int] = {}
+
+        for symbol_name in symbols["functions"] + symbols["classes"]:
+            for i, line in enumerate(lines, 1):
+                if f"def {symbol_name}(" in line or f"class {symbol_name}:" in line:
+                    symbol_lines[symbol_name] = i
+                    break
+
+        return symbol_lines
+
     def _process_vlang_regex(self, file_path: str) -> None:
-        """V语言正则处理 - 简单模式匹配"""
+        """V语言正则处理 - 简单有效"""
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             symbols: Dict[str, List[str]] = {
                 "functions": [],
-                "classes": [],
+                "types": [],
                 "imports": [],
             }
 
-            # 简单的正则匹配
-            functions = re.findall(r"fn\s+(\w+)\s*\(", content)
-            symbols["functions"] = functions
+            lines = content.split("\n")
 
-            imports = re.findall(r"import\s+([^\s]+)", content)
-            symbols["imports"] = imports
+            for line_num, line in enumerate(lines, 1):
+                line = line.strip()
 
-            self._register_symbols(symbols, file_path)
+                # 函数定义
+                if re.match(r"^\w+\s*::.*\(", line):
+                    func_name = re.split(r"\s*::", line)[0].strip()
+                    symbols["functions"].append(func_name)
+
+                # 类型定义
+                elif re.match(r"^\w+\s*::.*struct", line):
+                    type_name = re.split(r"\s*::", line)[0].strip()
+                    symbols["types"].append(type_name)
+
+                # 导入
+                elif line.startswith("import "):
+                    import_name = line.replace("import ", "").strip()
+                    symbols["imports"].append(import_name)
+
+            # 提取符号行号信息
+            symbol_lines = self._extract_vlang_symbol_lines(content, symbols)
+
+            # 注册符号到索引
+            self._register_symbols_with_lines(symbols, symbol_lines, file_path)
 
         except Exception:
             pass
 
+    def _extract_vlang_symbol_lines(
+        self, content: str, symbols: Dict[str, List[str]]
+    ) -> Dict[str, int]:
+        """提取V语言符号的行号"""
+        lines = content.split("\n")
+        symbol_lines: Dict[str, int] = {}
+
+        for symbol_name in symbols["functions"] + symbols["types"]:
+            for i, line in enumerate(lines, 1):
+                if f"{symbol_name} ::" in line:
+                    symbol_lines[symbol_name] = i
+                    break
+
+        return symbol_lines
+
     def _process_tree_sitter(self, file_path: str) -> None:
         """Tree-sitter统一处理 - 支持多种语言"""
         try:
-            from .builder_decorators import detect_language
-
-            language = detect_language(file_path)
-            parser = get_parser(language)
-
+            parser = get_parser(Path(file_path).suffix.lower())
             if not parser:
                 return
 
@@ -154,120 +204,129 @@ class IndexBuilder:
             symbols: Dict[str, List[str]] = {
                 "functions": [],
                 "classes": [],
+                "types": [],
                 "imports": [],
             }
 
-            # 简单的节点遍历
-            def walk_tree(node):
-                if hasattr(node, "type"):
-                    node_type = node.type
+            def extract_symbols(node, depth=0):
+                if depth > 20:  # 防止过深递归
+                    return
 
-                    # 函数定义 - 支持多种语言
-                    if (
-                        node_type
-                        in [
-                            "procedure_declaration",
-                            "function_declaration",
-                            "function_definition",
-                        ]
-                        or "function" in node_type.lower()
-                        or "method" in node_type.lower()
-                    ):
-                        name = self._extract_name(node, content)
-                        if name:
-                            symbols["functions"].append(name)
+                node_type = node.type
 
-                    # 类/结构体定义 - 支持多种语言
-                    elif (
-                        node_type
-                        in [
-                            "struct_declaration",
-                            "class_declaration",
-                            "class_definition",
-                        ]
-                        or "class" in node_type.lower()
-                    ):
-                        name = self._extract_name(node, content)
-                        if name:
-                            symbols["classes"].append(name)
+                # 根据语言类型判断符号类型
+                if node_type in [
+                    "function_definition",
+                    "function_declaration",
+                    "method_definition",
+                ]:
+                    if node.child_count > 0:
+                        child = node.child_by_field_name("name") or node.child(0)
+                        if child:
+                            symbols["functions"].append(child.text.decode())
 
-                    # 导入语句 - 只处理import_declaration避免重复
-                    elif node_type == "import_declaration":
-                        imp = self._extract_import(node, content)
-                        if imp:
-                            symbols["imports"].append(imp)
+                elif node_type in [
+                    "class_definition",
+                    "class_declaration",
+                    "struct_definition",
+                ]:
+                    if node.child_count > 0:
+                        child = node.child_by_field_name("name") or node.child(0)
+                        if child:
+                            symbols["classes"].append(child.text.decode())
 
+                elif node_type in ["type_definition", "type_alias_declaration"]:
+                    if node.child_count > 0:
+                        child = node.child_by_field_name("name") or node.child(0)
+                        if child:
+                            symbols["types"].append(child.text.decode())
+
+                # 递归处理子节点
                 for child in node.children:
-                    walk_tree(child)
+                    extract_symbols(child, depth + 1)
 
-            walk_tree(tree.root_node)
-            self._register_symbols(symbols, file_path)
+            extract_symbols(tree.root_node)
+
+            # 提取符号行号信息
+            symbol_lines = self._extract_tree_sitter_symbol_lines(
+                content, symbols, tree
+            )
+
+            # 注册符号到索引
+            self._register_symbols_with_lines(symbols, symbol_lines, file_path)
 
         except Exception:
             pass
 
-    def _extract_name(self, node, content: bytes) -> Optional[str]:
-        """提取节点名称 - 简单实现"""
-        try:
+    def _extract_tree_sitter_symbol_lines(
+        self, content: bytes, symbols: Dict[str, List[str]], tree
+    ) -> Dict[str, int]:
+        """从Tree-sitter解析树中提取符号行号"""
+        symbol_lines: Dict[str, int] = {}
+        content_str = content.decode("utf-8", errors="ignore")
+        lines = content_str.split("\n")
+
+        def find_symbol_nodes(node, target_symbols):
+            """递归查找符号节点"""
+            found_nodes = []
+
+            node_type = node.type
+            symbol_name = None
+            symbol_type = None
+
+            if node_type in [
+                "function_definition",
+                "function_declaration",
+                "method_definition",
+            ]:
+                if node.child_count > 0:
+                    child = node.child_by_field_name("name") or node.child(0)
+                    if child:
+                        symbol_name = child.text.decode()
+                        symbol_type = "function"
+
+            elif node_type in [
+                "class_definition",
+                "class_declaration",
+                "struct_definition",
+            ]:
+                if node.child_count > 0:
+                    child = node.child_by_field_name("name") or node.child(0)
+                    if child:
+                        symbol_name = child.text.decode()
+                        symbol_type = "class"
+
+            elif node_type in ["type_definition", "type_alias_declaration"]:
+                if node.child_count > 0:
+                    child = node.child_by_field_name("name") or node.child(0)
+                    if child:
+                        symbol_name = child.text.decode()
+                        symbol_type = "type"
+
+            if symbol_name and symbol_name in target_symbols:
+                found_nodes.append((symbol_name, node.start_point.row + 1))
+
             for child in node.children:
-                if hasattr(child, "type") and "identifier" in child.type:
-                    start = child.start_byte
-                    end = child.end_byte
-                    return content[start:end].decode("utf-8")
-        except Exception:
-            pass
-        return None
+                found_nodes.extend(find_symbol_nodes(child, target_symbols))
 
-    def _extract_import(self, node, content: bytes) -> Optional[str]:
-        """提取导入语句 - 简单实现"""
-        try:
-            # 对于import_declaration，只提取字符串内容
-            if node.type == "import_declaration":
-                for child in node.children:
-                    if hasattr(child, "type") and child.type == "string":
-                        start = child.start_byte
-                        end = child.end_byte
-                        return content[start:end].decode("utf-8").strip()
-            else:
-                # 其他情况，提取整个节点
-                start = node.start_byte
-                end = node.end_byte
-                return content[start:end].decode("utf-8").strip()
-        except Exception:
-            pass
-        return None
+            return found_nodes
 
-    def _register_symbols(self, symbols: Dict[str, List[str]], file_path: str) -> None:
-        """注册符号到索引 - 直接数据操作"""
-        from .index import FileInfo
-        from .builder_decorators import detect_language
+        # 查找所有符号的行号
+        all_symbols = symbols["functions"] + symbols["classes"] + symbols["types"]
+        found_symbols = find_symbol_nodes(tree.root_node, all_symbols)
 
-        # 首先创建文件信息
-        if file_path not in self.index.files:
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    line_count = len(f.read().splitlines())
+        for symbol_name, line_num in found_symbols:
+            symbol_lines[symbol_name] = line_num
 
-                language = detect_language(file_path)
-                file_info = FileInfo(
-                    language=language,
-                    line_count=line_count,
-                    symbols=symbols,
-                    imports=symbols.get("imports", []),
-                )
-                self.index.add_file(file_path, file_info)
-            except Exception:
-                # 如果文件读取失败，创建基本文件信息
-                language = detect_language(file_path)
-                file_info = FileInfo(
-                    language=language,
-                    line_count=0,
-                    symbols=symbols,
-                    imports=symbols.get("imports", []),
-                )
-                self.index.add_file(file_path, file_info)
+        return symbol_lines
 
-        # 然后注册符号
+    def _register_symbols_with_lines(
+        self,
+        symbols: Dict[str, List[str]],
+        symbol_lines: Dict[str, int],
+        file_path: str,
+    ) -> None:
+        """注册符号到索引 - 使用正确的行号"""
         for symbol_type, symbol_list in symbols.items():
             for symbol in symbol_list:
                 if symbol:  # 确保非空
@@ -278,12 +337,17 @@ class IndexBuilder:
                         type_name = "class"
                     elif symbol_type == "imports":
                         type_name = "import"
+                    elif symbol_type == "types":
+                        type_name = "type"
                     else:
                         type_name = symbol_type.rstrip("s")
+
+                    # 使用提取的实际行号，如果没有找到则使用1作为默认值
+                    line_number = symbol_lines.get(symbol, 1)
 
                     symbol_info = SymbolInfo(
                         type=type_name,
                         file=file_path,
-                        line=1,  # 简化处理
+                        line=line_number,  # 使用实际行号
                     )
                     self.index.add_symbol(symbol, symbol_info)

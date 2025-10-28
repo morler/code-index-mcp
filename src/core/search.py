@@ -5,6 +5,7 @@ Phase 3并行搜索引擎 - 符合200行限制
 """
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -14,6 +15,9 @@ from typing import Any, Dict, List, Optional
 from .index import CodeIndex, SearchQuery, SearchResult
 from .search_cache import SearchCacheMixin
 from .search_parallel import ParallelSearchMixin
+
+# 设置日志记录
+logger = logging.getLogger(__name__)
 
 
 class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
@@ -133,30 +137,134 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
         return matches
 
     def _search_symbol(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """符号搜索 - ripgrep优先，fallback到索引搜索"""
-        # 检查ripgrep可用性
-        if shutil.which("rg"):
-            return self._search_symbol_with_ripgrep(query)
+        """符号搜索 - 优先使用索引搜索，改进fallback机制"""
+        logger.debug(
+            f"Starting symbol search for pattern: {query.pattern}, type: {query.type}"
+        )
 
-        # Fallback到原实现 - 直接数据访问
+        try:
+            # 1. 优先使用索引搜索（最可靠）
+            index_matches = self._search_symbol_index(query)
+            if index_matches:
+                logger.debug(f"Found {len(index_matches)} matches via index search")
+                return index_matches[: query.limit] if query.limit else index_matches
+
+            logger.debug("Index search returned no results, trying ripgrep fallback")
+
+            # 2. fallback 到简单 ripgrep 搜索
+            if shutil.which("rg"):
+                rg_matches = self._search_symbol_simple_rg(query)
+                if rg_matches:
+                    logger.debug(
+                        f"Found {len(rg_matches)} matches via ripgrep fallback"
+                    )
+                    return rg_matches[: query.limit] if query.limit else rg_matches
+                else:
+                    logger.debug("Ripgrep fallback returned no results")
+            else:
+                logger.debug("Ripgrep not available, no fallback possible")
+
+        except Exception as e:
+            logger.error(
+                f"Error during symbol search for pattern '{query.pattern}': {e}"
+            )
+
+        logger.debug(f"No matches found for pattern: {query.pattern}")
+        return []
+
+    def _search_symbol_index(self, query: SearchQuery) -> List[Dict[str, Any]]:
+        """索引符号搜索 - 支持精确、前缀、子串匹配"""
+        logger.debug(f"Starting index symbol search for pattern: {query.pattern}")
+
         pattern = query.pattern.lower() if not query.case_sensitive else query.pattern
         matches = []
-        for symbol_name, symbol_info in self.index.symbols.items():
-            search_name = (
-                symbol_name.lower() if not query.case_sensitive else symbol_name
-            )
-            if pattern in search_name:
-                matches.append(
-                    {
-                        "symbol": symbol_name,
-                        "type": symbol_info.type,
-                        "file": symbol_info.file,
-                        "line": symbol_info.line,
-                    }
+
+        try:
+            total_symbols = len(self.index.symbols)
+            logger.debug(f"Searching through {total_symbols} indexed symbols")
+
+            for symbol_name, symbol_info in self.index.symbols.items():
+                search_name = (
+                    symbol_name.lower() if not query.case_sensitive else symbol_name
                 )
-                if query.limit and len(matches) >= query.limit:
-                    break
-        return matches
+
+                # 支持多种匹配策略
+                is_match = False
+                if query.case_sensitive:
+                    # 精确匹配
+                    if symbol_name == pattern:
+                        is_match = True
+                    # 前缀匹配
+                    elif symbol_name.startswith(pattern):
+                        is_match = True
+                    # 子串匹配
+                    elif pattern in symbol_name:
+                        is_match = True
+                else:
+                    # 大小写不敏感匹配
+                    if search_name == pattern:
+                        is_match = True
+                    elif search_name.startswith(pattern):
+                        is_match = True
+                    elif pattern in search_name:
+                        is_match = True
+
+                if is_match:
+                    matches.append(
+                        {
+                            "symbol": symbol_name,
+                            "type": symbol_info.type,
+                            "file": symbol_info.file,
+                            "line": symbol_info.line,
+                        }
+                    )
+
+            logger.debug(f"Index search found {len(matches)} potential matches")
+
+            # 按匹配质量排序：精确匹配 > 前缀匹配 > 子串匹配
+            if query.case_sensitive:
+                matches.sort(
+                    key=lambda m: (
+                        0
+                        if str(m["symbol"]) == pattern
+                        else 1
+                        if str(m["symbol"]).startswith(pattern)
+                        else 2
+                    )
+                )
+            else:
+                matches.sort(
+                    key=lambda m: (
+                        0
+                        if str(m["symbol"]).lower() == pattern
+                        else 1
+                        if str(m["symbol"]).lower().startswith(pattern)
+                        else 2
+                    )
+                )
+
+            return matches
+
+        except Exception as e:
+            logger.error(f"Error during index symbol search: {e}")
+            return []
+
+    def _search_symbol_simple_rg(self, query: SearchQuery) -> List[Dict[str, Any]]:
+        """简化的ripgrep符号搜索 - 使用更简单的模式"""
+        # 使用简单的词边界搜索
+        cmd = ["rg", "--json", "--line-number", "-w"]
+        if not query.case_sensitive:
+            cmd.append("--ignore-case")
+        if query.limit:
+            cmd.extend(["--max-count", str(query.limit)])
+
+        cmd.extend([query.pattern, self.index.base_path])
+
+        output = self._run_ripgrep_command(cmd)
+        if output:
+            return self._parse_rg_symbol_output(output, query.pattern)
+        else:
+            return []
 
     def _find_references(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """查找引用 - 最简实现"""
@@ -299,67 +407,9 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
                 return []
 
     def _search_symbol_with_ripgrep(self, query: SearchQuery) -> List[Dict[str, Any]]:
-        """ripgrep符号搜索实现 - 改进版本"""
-        # 构建更好的符号搜索模式
-        patterns = [
-            f"\\bdef\\s+{query.pattern}\\s*\\(",  # Python functions
-            f"\\bclass\\s+{query.pattern}\\b",  # Python classes
-            f"\\bfunction\\s+{query.pattern}\\s*\\(",  # JavaScript functions
-            f"\\bconst\\s+{query.pattern}\\s*=",  # JavaScript const
-            f"\\blet\\s+{query.pattern}\\s*=",  # JavaScript let
-            f"\\bvar\\s+{query.pattern}\\s*=",  # JavaScript var
-            f"\\bpublic\\s+.*\\s+{query.pattern}\\s*\\(",  # Java public methods
-            f"\\bprivate\\s+.*\\s+{query.pattern}\\s*\\(",  # Java private methods
-            f"\\bprotected\\s+.*\\s+{query.pattern}\\s*\\(",  # Java protected methods
-            f"\\bstatic\\s+.*\\s+{query.pattern}\\s*\\(",  # Java/C# static methods
-            f"\\bstruct\\s+{query.pattern}\\b",  # C/C++ structs
-            f"\\benum\\s+{query.pattern}\\b",  # C/C++/Java enums
-            f"\\binterface\\s+{query.pattern}\\b",  # Java/C# interfaces
-            f"\\bimport\\s+.*{query.pattern}",  # Import statements
-            f"\\bfrom\\s+.*\\s+import\\s+.*{query.pattern}",  # Python from import
-        ]
-
-        all_matches = []
-
-        # 搜索每种模式
-        for pattern in patterns:
-            cmd = ["rg", "--json", "--line-number"]
-            if not query.case_sensitive:
-                cmd.append("--ignore-case")
-
-            cmd.extend([pattern, self.index.base_path])
-
-            output = self._run_ripgrep_command(cmd)
-            if output:
-                matches = self._parse_rg_symbol_output(output, query.pattern)
-                all_matches.extend(matches)
-
-                # 如果找到足够的结果，停止搜索
-                if query.limit and len(all_matches) >= query.limit:
-                    break
-
-        # 如果没有找到匹配，fallback到简单词边界搜索
-        if not all_matches:
-            cmd = ["rg", "--json", "--line-number", "-w"]
-            if not query.case_sensitive:
-                cmd.append("--ignore-case")
-            if query.limit:
-                cmd.extend(["--max-count", str(query.limit)])
-
-            cmd.extend([query.pattern, self.index.base_path])
-
-            output = self._run_ripgrep_command(cmd)
-            if output:
-                all_matches = self._parse_rg_symbol_output(output, query.pattern)
-            else:
-                # 最后fallback到索引搜索
-                return self._search_symbol_fallback(query)
-
-        # 限制结果数量
-        if query.limit and len(all_matches) > query.limit:
-            all_matches = all_matches[: query.limit]
-
-        return all_matches
+        """简化的ripgrep符号搜索实现 - 使用简单模式"""
+        # 直接使用简单词边界搜索
+        return self._search_symbol_simple_rg(query)
 
     def _search_symbol_fallback(self, query: SearchQuery) -> List[Dict[str, Any]]:
         """符号搜索fallback实现"""
@@ -396,7 +446,10 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
                         line_content = data["data"]["lines"]["text"].strip()
 
                         # 尝试检测符号类型
-                        symbol_type = self._detect_symbol_type(line_content, pattern)
+                        language = self._detect_language(file_path)
+                        symbol_type = self._detect_symbol_type(
+                            line_content, pattern, language
+                        )
 
                         matches.append(
                             {
@@ -412,11 +465,293 @@ class SearchEngine(ParallelSearchMixin, SearchCacheMixin):
                     continue
         return matches
 
-    def _detect_symbol_type(self, line_content: str, symbol_name: str) -> str:
-        """检测符号类型 - 改进版本"""
+    def _detect_symbol_type(
+        self, line_content: str, symbol_name: str, language: str = "unknown"
+    ) -> str:
+        """检测符号类型 - 增强版本，支持语言特定检测"""
         line = line_content.strip()
         line_lower = line.lower()
 
+        # 语言特定的检测策略
+        if language in ["python", "py"]:
+            return self._detect_python_symbol_type(line, symbol_name)
+        elif language in ["javascript", "js", "typescript", "ts"]:
+            return self._detect_javascript_symbol_type(line, symbol_name)
+        elif language in ["java"]:
+            return self._detect_java_symbol_type(line, symbol_name)
+        elif language in ["c", "cpp", "c++", "cc"]:
+            return self._detect_c_symbol_type(line, symbol_name)
+        elif language in ["rust", "rs"]:
+            return self._detect_rust_symbol_type(line, symbol_name)
+        elif language in ["go"]:
+            return self._detect_go_symbol_type(line, symbol_name)
+        else:
+            # 通用检测
+            return self._detect_generic_symbol_type(line, symbol_name)
+
+    def _detect_python_symbol_type(self, line: str, symbol_name: str) -> str:
+        """Python符号类型检测"""
+        # 函数检测
+        if re.match(r"^(async\s+)?def\s+" + re.escape(symbol_name) + r"\s*\(", line):
+            return "function"
+        elif re.match(r"^(async\s+)?def\s+\w+\s*\(", line):
+            return "function"
+
+        # 类检测
+        elif re.match(r"^class\s+" + re.escape(symbol_name) + r"\b", line):
+            return "class"
+        elif re.match(r"^class\s+\w+", line):
+            return "class"
+
+        # 变量检测
+        elif re.match(r"^" + re.escape(symbol_name) + r"\s*=", line):
+            return "variable"
+        elif re.match(r"^\w+\s*=", line):
+            return "variable"
+
+        # 导入检测
+        elif re.match(r"^import\s+.*" + re.escape(symbol_name), line):
+            return "import"
+        elif re.match(r"^from\s+.*\s+import\s+.*" + re.escape(symbol_name), line):
+            return "import"
+
+        return "unknown"
+
+    def _detect_javascript_symbol_type(self, line: str, symbol_name: str) -> str:
+        """JavaScript/TypeScript符号类型检测"""
+        # 函数检测
+        if re.match(r"^function\s+" + re.escape(symbol_name) + r"\s*\(", line):
+            return "function"
+        elif re.match(
+            r"^const\s+" + re.escape(symbol_name) + r"\s*=\s*(async\s+)?\(", line
+        ):
+            return "function"
+        elif re.match(
+            r"^let\s+" + re.escape(symbol_name) + r"\s*=\s*(async\s+)?\(", line
+        ):
+            return "function"
+        elif re.match(
+            r"^var\s+" + re.escape(symbol_name) + r"\s*=\s*(async\s+)?\(", line
+        ):
+            return "function"
+        elif re.match(r"^function\s+\w+\s*\(", line):
+            return "function"
+
+        # 类检测
+        elif re.match(r"^class\s+" + re.escape(symbol_name) + r"\b", line):
+            return "class"
+        elif re.match(r"^class\s+\w+", line):
+            return "class"
+
+        # 变量检测
+        elif re.match(r"^(const|let|var)\s+" + re.escape(symbol_name) + r"\s*=", line):
+            return "variable"
+        elif re.match(r"^(const|let|var)\s+\w+\s*=", line):
+            return "variable"
+
+        # 导入检测
+        elif re.match(r"^import\s+.*" + re.escape(symbol_name), line):
+            return "import"
+        elif re.match(r"^require\s*\([\"'].*" + re.escape(symbol_name), line):
+            return "import"
+
+        return "unknown"
+
+    def _detect_java_symbol_type(self, line: str, symbol_name: str) -> str:
+        """Java符号类型检测"""
+        # 方法检测
+        if re.match(
+            r"^(public|private|protected|static)?\s*(\w+\s+)*"
+            + re.escape(symbol_name)
+            + r"\s*\(",
+            line,
+        ):
+            return "method"
+        elif re.match(r"^(public|private|protected|static)?\s*(\w+\s+)*\w+\s*\(", line):
+            return "method"
+
+        # 类检测
+        elif re.match(r"^(public\s+)?class\s+" + re.escape(symbol_name) + r"\b", line):
+            return "class"
+        elif re.match(r"^(public\s+)?(abstract\s+)?class\s+\w+", line):
+            return "class"
+
+        # 接口检测
+        elif re.match(
+            r"^(public\s+)?interface\s+" + re.escape(symbol_name) + r"\b", line
+        ):
+            return "interface"
+        elif re.match(r"^(public\s+)?interface\s+\w+", line):
+            return "interface"
+
+        # 枚举检测
+        elif re.match(r"^(public\s+)?enum\s+" + re.escape(symbol_name) + r"\b", line):
+            return "enum"
+        elif re.match(r"^(public\s+)?enum\s+\w+", line):
+            return "enum"
+
+        # 变量检测
+        elif re.match(
+            r"^(public|private|protected|static)?\s*(final\s+)?\w+\s+"
+            + re.escape(symbol_name)
+            + r"\s*[=;]",
+            line,
+        ):
+            return "variable"
+        elif re.match(
+            r"^(public|private|protected|static)?\s*(final\s+)?\w+\s+\w+\s*[=;]", line
+        ):
+            return "variable"
+
+        # 导入检测
+        elif re.match(r"^import\s+.*" + re.escape(symbol_name), line):
+            return "import"
+
+        return "unknown"
+
+    def _detect_c_symbol_type(self, line: str, symbol_name: str) -> str:
+        """C/C++符号类型检测"""
+        # 函数检测
+        if re.match(
+            r"^(extern\s+)?(static\s+)?(inline\s+)?\w+\s+"
+            + re.escape(symbol_name)
+            + r"\s*\(",
+            line,
+        ):
+            return "function"
+        elif re.match(r"^(extern\s+)?(static\s+)?(inline\s+)?\w+\s+\w+\s*\(", line):
+            return "function"
+
+        # 结构体检测
+        elif re.match(r"^struct\s+" + re.escape(symbol_name) + r"\b", line):
+            return "struct"
+        elif re.match(r"^struct\s+\w+", line):
+            return "struct"
+
+        # 联合体检测
+        elif re.match(r"^union\s+" + re.escape(symbol_name) + r"\b", line):
+            return "union"
+        elif re.match(r"^union\s+\w+", line):
+            return "union"
+
+        # 枚举检测
+        elif re.match(r"^enum\s+" + re.escape(symbol_name) + r"\b", line):
+            return "enum"
+        elif re.match(r"^enum\s+\w+", line):
+            return "enum"
+
+        # 变量检测
+        elif re.match(
+            r"^(extern\s+)?(static\s+)?\w+\s+" + re.escape(symbol_name) + r"\s*[=;]",
+            line,
+        ):
+            return "variable"
+        elif re.match(r"^(extern\s+)?(static\s+)?\w+\s+\w+\s*[=;]", line):
+            return "variable"
+
+        # 宏定义检测
+        elif re.match(r"#define\s+" + re.escape(symbol_name) + r"\b", line):
+            return "macro"
+        elif re.match(r"#define\s+\w+", line):
+            return "macro"
+
+        # 包含检测
+        elif re.match(r'^#include\s+[<"]', line):
+            return "include"
+
+        return "unknown"
+
+    def _detect_rust_symbol_type(self, line: str, symbol_name: str) -> str:
+        """Rust符号类型检测"""
+        # 函数检测
+        if re.match(
+            r"^(pub\s+)?(async\s+)?(unsafe\s+)?fn\s+"
+            + re.escape(symbol_name)
+            + r"\s*\(",
+            line,
+        ):
+            return "function"
+        elif re.match(r"^(pub\s+)?(async\s+)?(unsafe\s+)?fn\s+\w+\s*\(", line):
+            return "function"
+
+        # 结构体检测
+        elif re.match(r"^struct\s+" + re.escape(symbol_name) + r"\b", line):
+            return "struct"
+        elif re.match(r"^struct\s+\w+", line):
+            return "struct"
+
+        # 枚举检测
+        elif re.match(r"^enum\s+" + re.escape(symbol_name) + r"\b", line):
+            return "enum"
+        elif re.match(r"^enum\s+\w+", line):
+            return "enum"
+
+        # 特征检测
+        elif re.match(r"^trait\s+" + re.escape(symbol_name) + r"\b", line):
+            return "trait"
+        elif re.match(r"^trait\s+\w+", line):
+            return "trait"
+
+        # 变量检测
+        elif re.match(r"^(pub\s+)?(const\s+)?(static\s+)?\w+\s*:\s*\w+", line):
+            return "variable"
+
+        # 模块检测
+        elif re.match(r"^mod\s+" + re.escape(symbol_name) + r"\b", line):
+            return "module"
+        elif re.match(r"^mod\s+\w+", line):
+            return "module"
+
+        # 使用检测
+        elif re.match(r"^use\s+.*" + re.escape(symbol_name), line):
+            return "import"
+        elif re.match(r"^use\s+", line):
+            return "import"
+
+        return "unknown"
+
+    def _detect_go_symbol_type(self, line: str, symbol_name: str) -> str:
+        """Go符号类型检测"""
+        # 函数检测
+        if re.match(r"^func\s+" + re.escape(symbol_name) + r"\s*\(", line):
+            return "function"
+        elif re.match(r"^func\s+\w+\s*\(", line):
+            return "function"
+
+        # 结构体检测
+        elif re.match(r"^type\s+" + re.escape(symbol_name) + r"\s+struct\b", line):
+            return "struct"
+        elif re.match(r"^type\s+\w+\s+struct\b", line):
+            return "struct"
+
+        # 接口检测
+        elif re.match(r"^type\s+" + re.escape(symbol_name) + r"\s+interface\b", line):
+            return "interface"
+        elif re.match(r"^type\s+\w+\s+interface\b", line):
+            return "interface"
+
+        # 变量检测
+        elif re.match(r"^var\s+" + re.escape(symbol_name) + r"\s+", line):
+            return "variable"
+        elif re.match(r"^var\s+\w+\s+", line):
+            return "variable"
+
+        # 常量检测
+        elif re.match(r"^const\s+" + re.escape(symbol_name) + r"\s+", line):
+            return "constant"
+        elif re.match(r"^const\s+\w+\s+", line):
+            return "constant"
+
+        # 导入检测
+        elif re.match(r"^import\s+.*" + re.escape(symbol_name), line):
+            return "import"
+        elif re.match(r"^import\s+", line):
+            return "import"
+
+        return "unknown"
+
+    def _detect_generic_symbol_type(self, line: str, symbol_name: str) -> str:
+        """通用符号类型检测 - 回退方案"""
         # 函数检测 - 更精确的模式
         function_patterns = [
             r"^def\s+\w+\s*\(",  # Python: def name(
